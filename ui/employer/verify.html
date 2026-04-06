@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Verify Credential</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/employer/verify.css">
+<script src="/shared/authenx-code.js"></script>
+</head>
+<body>
+<div id="navbar"></div>
+
+<div class="verify-layout">
+  <div id="stepper-mount"></div>
+
+  <div class="card">
+    <div style="margin-bottom:24px">
+      <div style="font-size:20px;font-weight:700;color:var(--ax-gray-900);margin-bottom:4px">Verify AuthenX Credential</div>
+      <div style="font-size:13px;color:var(--ax-gray-500)">Scan the AuthenX Visual Code or paste the text code to verify</div>
+    </div>
+
+    <!-- ── Tab Switcher ── -->
+    <div class="tab-bar">
+      <button class="tab active" data-tab="scan" onclick="switchTab('scan')">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9V5a2 2 0 012-2h4M15 3h4a2 2 0 012 2v4M21 15v4a2 2 0 01-2 2h-4M9 21H5a2 2 0 01-2-2v-4"/></svg>
+        Scan Code
+      </button>
+      <button class="tab" data-tab="upload" onclick="switchTab('upload')">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+        Upload Image
+      </button>
+      <button class="tab" data-tab="paste" onclick="switchTab('paste')">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+        Paste Code
+      </button>
+    </div>
+
+    <!-- ── Scan Tab ── -->
+    <div class="tab-panel active" id="panel-scan">
+      <div class="scanner-container">
+        <video id="camera-feed" autoplay playsinline muted></video>
+        <div class="scan-overlay">
+          <div class="scan-guide">
+            <div class="guide-corner tl"></div>
+            <div class="guide-corner tr"></div>
+            <div class="guide-corner bl"></div>
+            <div class="guide-corner br"></div>
+          </div>
+          <div class="scan-text">Align AuthenX Code within the frame</div>
+        </div>
+        <canvas id="scan-canvas" style="display:none"></canvas>
+      </div>
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button class="btn btn-primary btn-lg" id="scan-btn" onclick="captureAndDecode()" style="flex:1;justify-content:center">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9V5a2 2 0 012-2h4M15 3h4a2 2 0 012 2v4M21 15v4a2 2 0 01-2 2h-4M9 21H5a2 2 0 01-2-2v-4"/></svg>
+          Capture &amp; Scan
+        </button>
+      </div>
+      <div class="scan-hint">
+        <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Point your camera at the AuthenX Visual Code. Standard QR readers cannot decode this.
+      </div>
+    </div>
+
+    <!-- ── Upload Tab ── -->
+    <div class="tab-panel" id="panel-upload">
+      <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+        <svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="opacity:0.4"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+        <div style="font-size:15px;font-weight:600;color:var(--ax-gray-700);margin-top:12px">Drop an AuthenX Code image here</div>
+        <div style="font-size:13px;color:var(--ax-gray-400);margin-top:4px">or click to browse — PNG, JPG accepted</div>
+        <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFileUpload(event)">
+      </div>
+      <canvas id="upload-canvas" style="display:none"></canvas>
+    </div>
+
+    <!-- ── Paste Tab ── -->
+    <div class="tab-panel" id="panel-paste">
+      <div class="form-group">
+        <label>AuthenX Code</label>
+        <textarea id="code-input" placeholder="AX1.xxxxxxxxxxxxxxxx..." rows="5" oninput="validateCode()"></textarea>
+        <div id="code-error" style="font-size:12px;color:var(--ax-revoked);margin-top:4px;display:none"></div>
+      </div>
+      <button class="btn btn-primary btn-lg" id="verify-btn" onclick="startVerify()" style="width:100%;justify-content:center" disabled>
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+        Verify Credential
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Status banner -->
+<div id="scan-result-banner" class="scan-result-banner" style="display:none"></div>
+
+<div id="toast-container" class="toast-container"></div>
+
+<script src="/employer/verify.js"></script>
+<script>
+if (!Auth.requireAuth()) {}
+document.getElementById('navbar').innerHTML = renderNavbar('verify');
+document.getElementById('stepper-mount').innerHTML = renderStepper(1);
+
+let cameraStream = null;
+
+/* ── Tab switching ── */
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + tab).classList.add('active');
+  if (tab === 'scan') startCamera();
+  else stopCamera();
+}
+
+/* ── Camera ── */
+async function startCamera() {
+  if (cameraStream) return;
+  const video = document.getElementById('camera-feed');
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    video.srcObject = cameraStream;
+  } catch (err) {
+    toast('Camera access denied. Use "Upload" or "Paste" tab instead.', 'error', 5000);
+    document.querySelector('.scanner-container').innerHTML =
+      '<div style="padding:60px;text-align:center;color:var(--ax-gray-400)"><svg width="48" height="48" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="opacity:0.3"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg><div style="margin-top:12px;font-size:14px">Camera not available</div><div style="font-size:12px;margin-top:4px">Use the Upload or Paste tab instead</div></div>';
+  }
+}
+
+function stopCamera() {
+  if (cameraStream) {
+    cameraStream.getTracks().forEach(t => t.stop());
+    cameraStream = null;
+    const video = document.getElementById('camera-feed');
+    if (video) video.srcObject = null;
+  }
+}
+
+/* ── Capture & Decode from camera ── */
+async function captureAndDecode() {
+  const video = document.getElementById('camera-feed');
+  const canvas = document.getElementById('scan-canvas');
+  if (!video || !video.videoWidth) { toast('Camera not ready', 'error'); return; }
+
+  const btn = document.getElementById('scan-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Scanning…';
+
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+
+  // Try to decode
+  let code = null;
+  try { code = AuthenXCode.decode(canvas); } catch(e) {}
+  if (!code) {
+    try { code = AuthenXCode.decodeClean(canvas); } catch(e) {}
+  }
+
+  if (code && code.startsWith('AX1.')) {
+    toast('✓ AuthenX Code detected!', 'success');
+    document.querySelector('.scan-overlay').classList.add('detected');
+    setTimeout(() => submitCode(code), 600);
+  } else {
+    toast('No AuthenX Code detected. Try adjusting the camera or use Upload/Paste.', 'error', 4000);
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9V5a2 2 0 012-2h4M15 3h4a2 2 0 012 2v4M21 15v4a2 2 0 01-2 2h-4M9 21H5a2 2 0 01-2-2v-4"/></svg> Capture &amp; Scan';
+  }
+}
+
+/* ── File Upload ── */
+function handleFileUpload(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.getElementById('upload-canvas');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    canvas.getContext('2d').drawImage(img, 0, 0);
+
+    let code = null;
+    try { code = AuthenXCode.decodeClean(canvas); } catch(e) {}
+    if (!code) { try { code = AuthenXCode.decode(canvas); } catch(e) {} }
+
+    if (code && code.startsWith('AX1.')) {
+      toast('✓ AuthenX Code decoded from image!', 'success');
+      setTimeout(() => submitCode(code), 400);
+    } else {
+      toast('Could not decode the image. Make sure it\'s an AuthenX Visual Code.', 'error', 5000);
+    }
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+// Drag and drop
+const uploadZone = document.getElementById('upload-zone');
+if (uploadZone) {
+  uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+  uploadZone.addEventListener('drop', e => {
+    e.preventDefault(); uploadZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) {
+      document.getElementById('file-input').files = e.dataTransfer.files;
+      handleFileUpload({ target: { files: e.dataTransfer.files } });
+    }
+  });
+}
+
+/* ── Paste validation ── */
+function validateCode() {
+  const code = document.getElementById('code-input').value.trim();
+  const btn = document.getElementById('verify-btn');
+  const errEl = document.getElementById('code-error');
+  const isValid = code.startsWith('AX1.') && code.length > 20;
+  btn.disabled = !isValid;
+  if (code && !isValid) {
+    errEl.textContent = 'Code must start with AX1. and be at least 20 characters';
+    errEl.style.display = '';
+  } else {
+    errEl.style.display = 'none';
+  }
+}
+
+/* ── Submit for verification ── */
+async function startVerify() {
+  const code = document.getElementById('code-input').value.trim();
+  if (!code.startsWith('AX1.')) { toast('Invalid code', 'error'); return; }
+  submitCode(code);
+}
+
+async function submitCode(code) {
+  stopCamera();
+  try {
+    const data = await API.post('/verify/code', { authenx_code: code });
+    sessionStorage.setItem('verify_code', code);
+    sessionStorage.setItem('verify_decode', JSON.stringify(data));
+    window.location.href = '/employer/decoding.html';
+  } catch (err) {
+    toast('Verification failed: ' + err.message, 'error');
+  }
+}
+
+// Start camera on load if scan tab is active
+startCamera();
+</script>
+</body>
+</html>

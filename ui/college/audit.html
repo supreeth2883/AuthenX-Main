@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Audit Log</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-mount"></div>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h2>Audit Log</h2>
+        <p>Immutable record of all verification events</p>
+      </div>
+      <div class="topbar-actions">
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ax-gray-500)">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+          Read-only — cannot be modified
+        </div>
+      </div>
+    </header>
+
+    <main class="page-content">
+      <!-- Stats row -->
+      <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px" id="audit-stats">
+        <div class="stat-card"><div class="stat-label">Total Events</div><div class="stat-value" id="stat-total">—</div></div>
+        <div class="stat-card green"><div class="stat-label">Verified</div><div class="stat-value" id="stat-verified">—</div></div>
+        <div class="stat-card red"><div class="stat-label">Revoked Results</div><div class="stat-value" id="stat-rev">—</div></div>
+        <div class="stat-card amber"><div class="stat-label">Errors</div><div class="stat-value" id="stat-err">—</div></div>
+      </div>
+
+      <!-- Filter bar -->
+      <div class="search-bar">
+        <div class="search-input-wrap">
+          <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input type="text" id="search-input" placeholder="Search by employer or result…" oninput="filterEvents()">
+        </div>
+        <div class="filter-tabs">
+          <button class="filter-tab active" data-filter="all" onclick="setFilter('all',this)">All</button>
+          <button class="filter-tab" data-filter="verified" onclick="setFilter('verified',this)">Verified</button>
+          <button class="filter-tab" data-filter="revoked" onclick="setFilter('revoked',this)">Revoked</button>
+          <button class="filter-tab" data-filter="error" onclick="setFilter('error',this)">Error</button>
+        </div>
+      </div>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Event Type</th>
+              <th>Result</th>
+              <th>Employer / Actor</th>
+              <th>Hash Match</th>
+              <th>Sig Valid</th>
+              <th>Latency</th>
+            </tr>
+          </thead>
+          <tbody id="audit-tbody">
+            <tr><td colspan="7" style="text-align:center;padding:48px">
+              <div class="spinner spinner-blue" style="margin:0 auto 12px"></div>
+              Loading audit log…
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:12px;font-size:12px;color:var(--ax-gray-400)" id="count-label"></div>
+    </main>
+  </div>
+</div>
+
+<script src="./app.js"></script>
+<script>
+if (!Auth.requireAuth()) {}
+document.getElementById('sidebar-mount').innerHTML = renderSidebar('audit');
+initNav('audit');
+
+let allEvents = [];
+let currentFilter = 'all';
+
+async function loadAudit() {
+  try {
+    const [logData, statsData] = await Promise.all([
+      API.get('/audit?limit=100'),
+      API.get('/audit/stats'),
+    ]);
+    allEvents = logData.events || [];
+
+    // Stats
+    document.getElementById('stat-total').textContent = statsData.total_verifications || allEvents.length;
+    document.getElementById('stat-verified').textContent = statsData.successful_verifications || allEvents.filter(e=>e.result==='verified').length;
+    document.getElementById('stat-rev').textContent = allEvents.filter(e=>e.result==='revoked').length;
+    document.getElementById('stat-err').textContent = statsData.failed_verifications || allEvents.filter(e=>e.result==='error').length;
+
+    renderTable(allEvents);
+  } catch (err) {
+    document.getElementById('audit-tbody').innerHTML =
+      `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--ax-gray-400)">Error: ${err.message}</td></tr>`;
+    toast('Failed to load audit log: ' + err.message, 'error');
+  }
+}
+
+function filterEvents() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  let filtered = allEvents;
+  if (currentFilter !== 'all') filtered = filtered.filter(e => e.result === currentFilter);
+  if (q) filtered = filtered.filter(e =>
+    (e.employer_name||'').toLowerCase().includes(q) ||
+    (e.result||'').toLowerCase().includes(q) ||
+    (e.request_type||'').toLowerCase().includes(q)
+  );
+  renderTable(filtered);
+}
+
+function setFilter(filter, el) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  filterEvents();
+}
+
+function renderTable(events) {
+  document.getElementById('count-label').textContent = `Showing ${events.length} event${events.length !== 1 ? 's' : ''}`;
+  const tbody = document.getElementById('audit-tbody');
+
+  if (!events.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state">
+      <h3>No audit events</h3>
+      <p>Verification events will appear here</p>
+    </div></td></tr>`;
+    return;
+  }
+
+  const typeLabels = {
+    live_verify: ['VERIFIED', 'event-VERIFIED'],
+    code_decode: ['DECODED',  'event-DECODED'],
+  };
+
+  const resultLabels = {
+    verified: ['VERIFIED', 'event-VERIFIED'],
+    revoked:  ['REVOKED',  'event-REVOKED'],
+    error:    ['ERROR',    'event-DECODED'],
+  };
+
+  tbody.innerHTML = events.map(e => {
+    const [typeLabel, typeCls] = typeLabels[e.request_type] || ['EVENT', 'event-DECODED'];
+    const [resLabel,  resCls]  = resultLabels[e.result]     || [e.result?.toUpperCase()||'—', 'event-DECODED'];
+    const checkMark = (v) => v == 1 ? '<span style="color:var(--ax-verified)">✓</span>' : v == 0 ? '<span style="color:var(--ax-revoked)">✕</span>' : '<span style="color:var(--ax-gray-400)">—</span>';
+
+    return `
+      <tr>
+        <td style="font-size:12px;white-space:nowrap">${formatDate(e.created_at)}</td>
+        <td><span class="event-badge ${typeCls}">${e.request_type?.replace('_',' ').toUpperCase()}</span></td>
+        <td><span class="event-badge ${resCls}">${resLabel}</span></td>
+        <td style="font-size:12px;color:var(--ax-gray-600)">${e.employer_name || '—'}</td>
+        <td style="text-align:center">${checkMark(e.hash_match)}</td>
+        <td style="text-align:center">${checkMark(e.sig_valid)}</td>
+        <td style="font-size:12px;color:var(--ax-gray-500)">${e.latency_ms != null ? e.latency_ms + 'ms' : '—'}</td>
+      </tr>`;
+  }).join('');
+}
+
+loadAudit();
+</script>
+</body>
+</html>

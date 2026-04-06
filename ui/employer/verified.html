@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Verified ✓</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/employer/verify.css">
+<style>
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .pulse-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--ax-verified);
+    animation: pulse 1.5s ease-in-out infinite;
+    display: inline-block;
+  }
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .fade-in { animation: fadeSlideIn 0.5s ease both; }
+  .fade-in-delay-1 { animation: fadeSlideIn 0.5s 0.15s ease both; }
+  .fade-in-delay-2 { animation: fadeSlideIn 0.5s 0.30s ease both; }
+  .fade-in-delay-3 { animation: fadeSlideIn 0.5s 0.45s ease both; }
+</style>
+</head>
+<body>
+<div id="navbar"></div>
+
+<div class="verify-layout">
+  <div id="stepper-mount"></div>
+
+  <!-- Verified banner -->
+  <div class="result-banner verified fade-in" style="margin-bottom:20px">
+    <div class="result-icon verified" style="font-size:36px">✓</div>
+    <div class="result-title verified">Credential Verified</div>
+    <div class="result-subtitle">Live data fetched from college ERP — cryptographically authenticated</div>
+    <div style="margin-top:12px;font-size:12px;color:#065F46;opacity:0.8" id="verified-time"></div>
+  </div>
+
+  <!-- Student profile card -->
+  <div class="profile-card fade-in-delay-1">
+    <div class="profile-header">
+      <div class="profile-avatar" id="profile-avatar">?</div>
+      <div style="flex:1">
+        <div class="profile-name" id="profile-name">—</div>
+        <div class="profile-college" id="profile-college">—</div>
+      </div>
+      <div class="live-badge">
+        <span class="pulse-dot"></span>
+        LIVE DATA
+      </div>
+    </div>
+
+    <div class="profile-grid" id="profile-grid"></div>
+  </div>
+
+  <!-- Cryptographic verification checks -->
+  <div class="card fade-in-delay-2" style="margin-bottom:20px">
+    <div style="font-size:14px;font-weight:600;color:var(--ax-gray-700);margin-bottom:16px;display:flex;align-items:center;gap:8px">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+      Cryptographic Verification
+    </div>
+
+    <div id="crypto-checks"></div>
+
+    <div style="margin-top:16px;padding:12px;background:var(--ax-verified-bg);border-radius:8px;border:1px solid #A7F3D0">
+      <div style="font-size:12px;color:#065F46;line-height:1.6">
+        <strong>All checks passed.</strong> The Ed25519 signature from the college's ERP system mathematically
+        proves this credential was issued authentically and has not been modified since.
+      </div>
+    </div>
+  </div>
+
+  <!-- Technical details (collapsible) -->
+  <div class="card fade-in-delay-2" style="margin-bottom:20px">
+    <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer" onclick="toggleTech()">
+      <div style="font-size:13px;font-weight:600;color:var(--ax-gray-600)">Technical Details</div>
+      <svg id="tech-chevron" width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" style="color:var(--ax-gray-400);transition:transform 0.2s"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+    </div>
+    <div id="tech-details" style="display:none;margin-top:16px">
+      <div id="tech-content" style="display:grid;gap:8px"></div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="card fade-in-delay-3">
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <button class="btn btn-verified btn-lg" id="download-btn" onclick="downloadReport()" style="flex:1;justify-content:center;min-width:140px">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Download Report
+      </button>
+      <button class="btn btn-secondary btn-lg" onclick="copyReport()" style="flex:1;justify-content:center;min-width:140px">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+        Copy Summary
+      </button>
+      <button class="btn btn-secondary btn-lg" onclick="window.location.href = '/employer/verify.html'" style="flex:1;justify-content:center;min-width:140px">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+        Verify Another
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container" class="toast-container"></div>
+
+<script src="/employer/verify.js"></script>
+<script>
+if (!Auth.requireAuth()) {}
+document.getElementById('navbar').innerHTML = renderNavbar();
+document.getElementById('stepper-mount').innerHTML = renderStepper(3);
+
+const liveRaw = sessionStorage.getItem('verify_live');
+const decodeRaw = sessionStorage.getItem('verify_decode');
+
+if (!liveRaw || !decodeRaw) {
+  window.location.href = '/employer/verify.html';
+}
+
+const liveData = JSON.parse(liveRaw);
+const decodeData = JSON.parse(decodeRaw);
+
+// If not actually verified, redirect to revoked
+if (liveData.result !== 'verified' && liveData.result !== 'fallback_verified') {
+  window.location.href = '/employer/revoked.html';
+}
+
+// Fallback Mode Setup
+const isFallback = liveData.result === 'fallback_verified';
+if (isFallback) {
+  document.querySelector('.result-banner').style.background = '#FFFBEB';
+  document.querySelector('.result-banner').style.borderColor = '#FCD34D';
+  document.querySelector('.result-title').textContent = 'ERP Offline — Cached Record Verified';
+  document.querySelector('.result-title').style.color = '#B45309';
+  document.querySelector('.result-icon').textContent = '⚠️';
+  document.querySelector('.result-icon').style.color = '#B45309';
+  document.querySelector('.result-subtitle').textContent = 'Unable to reach college ERP directly. Active status verified against recent AuthenX registry cache.';
+  document.querySelector('.result-subtitle').style.color = '#92400E';
+  
+  const badge = document.querySelector('.live-badge');
+  badge.innerHTML = '<span class="pulse-dot" style="background:#F59E0B;animation:none"></span> CACHED STATUS';
+  badge.style.color = '#B45309';
+  badge.style.borderColor = '#FCD34D';
+  badge.style.background = '#FEF3C7';
+}
+
+const student = liveData.live_data || {};
+// checks are at top level in live response
+const checks = {
+  hash_match:    liveData.hash_match,
+  issuance_sig:  liveData.issuance_sig,
+  live_sig:      liveData.live_sig,
+  not_revoked:   liveData.not_revoked,
+};
+
+// Verified time
+document.getElementById('verified-time').textContent =
+  'Verified at ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) +
+  ' on ' + new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+// Avatar + name
+const name = student.name || (isFallback ? 'Name Hidden (ERP Offline)' : '—');
+const initials = isFallback ? '?' : (name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || '?');
+document.getElementById('profile-avatar').textContent = initials;
+document.getElementById('profile-name').textContent = name;
+const collegeName = liveData.college || (decodeData.college?.name) || (typeof decodeData.college === 'string' ? decodeData.college : '—');
+document.getElementById('profile-college').textContent =
+  collegeName + ' · ' + (student.credential_type || decodeData.credential_type || '—').replace(/_/g, ' ');
+
+// Profile grid fields
+const fbVal = isFallback ? '<span style="color:var(--ax-gray-400)">ERP Offline</span>' : '—';
+const profileFields = [
+  { label: 'Degree',          value: student.degree || fbVal },
+  { label: 'Branch',          value: student.branch || fbVal },
+  { label: 'CGPA',            value: student.cgpa   || fbVal },
+  { label: 'Graduation Year', value: student.graduation_year || fbVal },
+  { label: 'Issue Date',      value: student.issue_date ? new Date(student.issue_date).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : fbVal },
+  { label: 'Credential Type', value: (student.credential_type || decodeData.credential_type || fbVal).replace(/_/g,' ') },
+];
+document.getElementById('profile-grid').innerHTML = profileFields.map(f => `
+  <div class="profile-field">
+    <div class="field-label">${f.label}</div>
+    <div class="field-value">${f.value}</div>
+  </div>`).join('');
+
+// Crypto checks
+const cryptoCheckDefs = [
+  { key: 'hash_match',     label: 'Canonical Hash Match',       desc: 'Live ERP data hashes to the same value stored at issuance — data unchanged' },
+  { key: 'issuance_sig',   label: 'Issuance Signature Valid',   desc: 'Ed25519 signature on the stored hash confirms original issuance authenticity' },
+  { key: 'live_sig',       label: 'Live ERP Signature Valid',   desc: 'Ed25519 signature on live nonce + hash proves real-time response from college ERP' },
+  { key: 'not_revoked',    label: 'Not Revoked',                desc: 'Registry confirms the credential status is active — not revoked by the college' },
+];
+document.getElementById('crypto-checks').innerHTML = cryptoCheckDefs.map(c => {
+  let status = 'fail';
+  let icon = '✕';
+  
+  if (c.key === 'live_sig' && isFallback) {
+    status = 'warn';
+    icon = '—';
+    c.desc = 'SKIPPED: ' + c.desc;
+  } else {
+    const val = checks[c.key];
+    const pass = val === true || val === 1 || (val !== false && val !== 0 && val !== null && val !== undefined);
+    status = pass ? 'pass' : 'fail';
+    icon = pass ? '✓' : '✕';
+  }
+
+  return `
+  <div class="check-row ${status}">
+    <div class="check-icon ${status}">${icon}</div>
+    <div style="flex:1">
+      <div class="check-label ${status}">${c.label}</div>
+      <div style="font-size:11px;color:var(--ax-gray-400);margin-top:2px">${c.desc}</div>
+    </div>
+  </div>`;
+}).join('');
+
+// Technical details
+const techItems = [
+  { label: 'Token ID',             value: decodeData.token_id || '—' },
+  { label: 'Canonical Hash',       value: decodeData.canonical_hash || '—' },
+  { label: 'Schema Version',       value: decodeData.schema_version || '1.0' },
+  { label: 'Student Ref',          value: decodeData.student_ref_token || '—' },
+  { label: 'Latency',              value: liveData.latency_ms != null ? liveData.latency_ms + ' ms' : '—' },
+];
+document.getElementById('tech-content').innerHTML = techItems.map(t => `
+  <div style="display:flex;gap:12px;align-items:baseline">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--ax-gray-400);font-weight:500;flex-shrink:0;width:130px">${t.label}</div>
+    <div style="font-family:Menlo,monospace;font-size:11px;color:var(--ax-gray-700);word-break:break-all">${t.value}</div>
+  </div>`).join('');
+
+function toggleTech() {
+  const el = document.getElementById('tech-details');
+  const chevron = document.getElementById('tech-chevron');
+  const open = el.style.display !== 'none';
+  el.style.display = open ? 'none' : '';
+  chevron.style.transform = open ? '' : 'rotate(180deg)';
+}
+
+function buildReportText() {
+  const ts = new Date().toLocaleString('en-IN');
+  const lines = [
+    '========================================',
+    'AUTHENX CREDENTIAL VERIFICATION REPORT',
+    '========================================',
+    '',
+    'RESULT: ✓ VERIFIED',
+    'Timestamp: ' + ts,
+    '',
+    'STUDENT DETAILS (LIVE FROM ERP)',
+    '──────────────────────────────',
+    'Name:            ' + (student.name || '—'),
+    'Institution:     ' + collegeName,
+    'Degree:          ' + (student.degree || '—'),
+    'Branch:          ' + (student.branch || '—'),
+    'CGPA:            ' + (student.cgpa || '—'),
+    'Graduation Year: ' + (student.graduation_year || '—'),
+    'Credential Type: ' + (student.credential_type || decodeData.credential_type || '—').replace(/_/g,' '),
+    'Issue Date:      ' + (student.issue_date || '—'),
+    '',
+    'CRYPTOGRAPHIC VERIFICATION',
+    '───────────────────────────',
+    'Hash Match:        ' + (liveData.hash_match ? 'PASS ✓' : 'FAIL ✕'),
+    'Issuance Sig:      ' + (liveData.issuance_sig ? 'PASS ✓' : 'FAIL ✕'),
+    'Live ERP Sig:      ' + (liveData.live_sig ? 'PASS ✓' : 'FAIL ✕'),
+    'Not Revoked:       ' + (liveData.not_revoked ? 'PASS ✓' : 'FAIL ✕'),
+    '',
+    'TOKEN DETAILS',
+    '─────────────',
+    'Token ID:      ' + (decodeData.token_id || '—'),
+    'Schema:        ' + (decodeData.schema_version || '1.0'),
+    'Student Ref:   ' + (decodeData.student_ref_token || '—'),
+    '',
+    'Verified by AuthenX — authenx.in',
+    '========================================',
+  ];
+  return lines.join('\n');
+}
+
+function downloadReport() {
+  const text = buildReportText();
+  const blob = new Blob([text], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'authenx-verified-' + (student.name || 'credential').replace(/\s+/g,'-').toLowerCase() + '-' + Date.now() + '.txt';
+  a.click();
+  URL.revokeObjectURL(url);
+  toast('Report downloaded', 'success');
+}
+
+function copyReport() {
+  navigator.clipboard.writeText(buildReportText()).then(() => {
+    toast('Report copied to clipboard', 'success');
+  }).catch(() => {
+    toast('Copy failed — please select and copy manually', 'error');
+  });
+}
+</script>
+</body>
+</html>

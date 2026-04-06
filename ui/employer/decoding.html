@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Registry Check</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/employer/verify.css">
+</head>
+<body>
+<div id="navbar"></div>
+
+<div class="verify-layout">
+  <div id="stepper-mount"></div>
+
+  <!-- Decoded info card -->
+  <div class="card" style="margin-bottom:20px">
+    <div style="margin-bottom:20px">
+      <div style="font-size:18px;font-weight:700;color:var(--ax-gray-900);margin-bottom:4px">Registry Check</div>
+      <div style="font-size:13px;color:var(--ax-gray-500)">Verifying credential against AuthenX registry — checking revocation status and hash integrity</div>
+    </div>
+
+    <!-- Checks -->
+    <div id="checks-container">
+      <div class="check-row">
+        <div class="check-icon pending" id="icon-format">⋯</div>
+        <div class="check-label" id="label-format">Code format validated</div>
+        <div class="check-detail" id="detail-format">Checking AX1. prefix…</div>
+      </div>
+      <div class="check-row">
+        <div class="check-icon pending" id="icon-registry">⋯</div>
+        <div class="check-label" id="label-registry">Found in registry</div>
+        <div class="check-detail" id="detail-registry">Querying database…</div>
+      </div>
+      <div class="check-row">
+        <div class="check-icon pending" id="icon-revoked">⋯</div>
+        <div class="check-label" id="label-revoked">Not revoked</div>
+        <div class="check-detail" id="detail-revoked">Checking status…</div>
+      </div>
+      <div class="check-row">
+        <div class="check-icon pending" id="icon-hash">⋯</div>
+        <div class="check-label" id="label-hash">Hash integrity</div>
+        <div class="check-detail" id="detail-hash">Reading record…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Decoded fields card (shown after decode completes) -->
+  <div class="card" id="decoded-card" style="display:none;margin-bottom:20px">
+    <div style="font-size:14px;font-weight:600;color:var(--ax-gray-700);margin-bottom:16px;display:flex;align-items:center;gap:8px">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      Decoded Credential Fields
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="decoded-fields"></div>
+
+    <div style="margin-top:16px;padding:12px;background:var(--ax-gray-50);border-radius:8px;border:1px solid var(--ax-gray-200)">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--ax-gray-400);font-weight:500;margin-bottom:6px">Canonical Hash (SHA-256)</div>
+      <div id="hash-preview" style="font-family:Menlo,monospace;font-size:11px;color:var(--ax-gray-600);word-break:break-all"></div>
+    </div>
+  </div>
+
+  <!-- Live verify button card -->
+  <div class="card" id="action-card" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--ax-gray-900)">Step 2 Complete</div>
+        <div style="font-size:13px;color:var(--ax-gray-500);margin-top:2px">Registry check passed — proceed to live verification</div>
+      </div>
+      <div style="width:40px;height:40px;border-radius:50%;background:var(--ax-verified);color:white;display:flex;align-items:center;justify-content:center;font-size:18px">✓</div>
+    </div>
+
+    <div style="background:var(--ax-sky);border-radius:10px;padding:16px;margin-bottom:20px">
+      <div style="font-size:12px;font-weight:600;color:var(--ax-blue);margin-bottom:6px">What happens next?</div>
+      <div style="font-size:12px;color:var(--ax-gray-600);line-height:1.6">
+        AuthenX will contact the college's live ERP system and fetch fresh student data in real-time.
+        The data is signed with Ed25519 cryptography, then verified against the registry — ensuring
+        the credential has not been tampered with and that the student's record is still active.
+      </div>
+    </div>
+
+    <button class="btn btn-primary btn-lg" id="live-verify-btn" onclick="startLiveVerify()" style="width:100%;justify-content:center">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+      Run Live Verification
+    </button>
+
+    <div style="margin-top:12px;text-align:center">
+      <a href="/employer/verify.html" style="font-size:12px;color:var(--ax-gray-400)">← Back to paste code</a>
+    </div>
+  </div>
+
+  <!-- Revoked early-exit card -->
+  <div class="card" id="revoked-card" style="display:none">
+    <div class="result-banner revoked" style="margin-bottom:0">
+      <div class="result-icon revoked" style="width:56px;height:56px;font-size:24px">✕</div>
+      <div class="result-title revoked" style="font-size:20px">Credential Revoked</div>
+      <div class="result-subtitle">This credential has been revoked by the issuing institution</div>
+    </div>
+    <div style="margin-top:20px;padding:16px;background:var(--ax-revoked-bg);border-radius:8px;border:1px solid #FECACA">
+      <div style="font-size:13px;font-weight:600;color:#991B1B;margin-bottom:6px">Do Not Accept This Credential</div>
+      <div style="font-size:12px;color:#7F1D1D;line-height:1.6">
+        The issuing college has revoked this academic credential. This means it is no longer valid
+        and should not be accepted for employment or any other purpose.
+      </div>
+    </div>
+    <div id="revoked-reason" style="display:none;margin-top:12px;font-size:12px;color:var(--ax-gray-500)"></div>
+    <button class="btn btn-secondary btn-lg" onclick="window.location.href = '/employer/verify.html'" style="width:100%;justify-content:center;margin-top:20px">
+      Verify Another Credential
+    </button>
+  </div>
+</div>
+
+<div id="toast-container" class="toast-container"></div>
+
+<script src="/employer/verify.js"></script>
+<script>
+if (!Auth.requireAuth()) {}
+document.getElementById('navbar').innerHTML = renderNavbar('decoding');
+document.getElementById('stepper-mount').innerHTML = renderStepper(2);
+
+const code = sessionStorage.getItem('verify_code');
+const decodeRaw = sessionStorage.getItem('verify_decode');
+
+if (!code || !decodeRaw) {
+  window.location.href = '/employer/verify.html';
+}
+
+const decodeData = JSON.parse(decodeRaw);
+
+function setCheck(id, state, labelText, detailText) {
+  const icon = document.getElementById('icon-' + id);
+  const label = document.getElementById('label-' + id);
+  const detail = document.getElementById('detail-' + id);
+  const row = icon.closest('.check-row');
+
+  row.className = 'check-row ' + (state === 'pass' ? 'pass' : state === 'fail' ? 'fail' : '');
+  icon.className = 'check-icon ' + (state === 'pass' ? 'pass' : state === 'fail' ? 'fail' : 'pending');
+  icon.textContent = state === 'pass' ? '✓' : state === 'fail' ? '✕' : '⋯';
+  if (labelText) { label.textContent = labelText; label.className = 'check-label ' + (state === 'pass' ? 'pass' : state === 'fail' ? 'fail' : ''); }
+  if (detailText) detail.textContent = detailText;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function runChecks() {
+  await sleep(300);
+
+  // Check 1: format
+  if (code && code.startsWith('AX1.') && code.length > 20) {
+    setCheck('format', 'pass', 'Code format validated', 'AX1. prefix ✓');
+  } else {
+    setCheck('format', 'fail', 'Invalid code format', 'Must start with AX1.');
+    return;
+  }
+
+  await sleep(400);
+
+  // Check 2: found in registry (token_id present means it was found)
+  const tokenId = decodeData.token_id;
+  if (tokenId) {
+    setCheck('registry', 'pass', 'Found in registry', `Token ID: ${tokenId.slice(0,8)}…`);
+  } else {
+    setCheck('registry', 'fail', 'Not found in registry', 'Code unrecognised');
+    return;
+  }
+
+  await sleep(400);
+
+  // Check 3: revocation status
+  if (decodeData.status === 'active') {
+    setCheck('revoked', 'pass', 'Not revoked', 'Status: active');
+  } else {
+    setCheck('revoked', 'fail', 'REVOKED', `Status: ${decodeData.status}`);
+    await sleep(200);
+    setCheck('hash', 'fail', 'Check skipped', 'Revoked — no live verify');
+    showRevokedCard(decodeData);
+    return;
+  }
+
+  await sleep(400);
+
+  // Check 4: hash preview
+  const hash = decodeData.canonical_hash;
+  if (hash) {
+    setCheck('hash', 'pass', 'Hash integrity', hash.slice(0, 16) + '…');
+  } else {
+    setCheck('hash', 'fail', 'No hash found', 'Integrity unverifiable');
+    return;
+  }
+
+  // All checks passed — show decoded fields
+  await sleep(200);
+  showDecodedCard();
+}
+
+function showDecodedCard() {
+  const collegeName = decodeData.college?.name || decodeData.college || '—';
+  const fields = [
+    { label: 'Issuing Institution', value: collegeName },
+    { label: 'Credential Type', value: (decodeData.credential_type || '—').replace(/_/g,' ') },
+    { label: 'Student Reference', value: decodeData.student_ref_token || '—' },
+    { label: 'Schema Version', value: decodeData.schema_version || '1.0' },
+    { label: 'Token Status', value: (decodeData.status || '—').toUpperCase() },
+    { label: 'Issued At', value: decodeData.issued_at ? new Date(decodeData.issued_at).toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'}) : '—' },
+  ];
+
+  document.getElementById('decoded-fields').innerHTML = fields.map(f => `
+    <div style="padding:12px;background:var(--ax-gray-50);border-radius:8px;border:1px solid var(--ax-gray-200)">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--ax-gray-400);font-weight:500;margin-bottom:4px">${f.label}</div>
+      <div style="font-size:14px;font-weight:600;color:var(--ax-gray-900)">${f.value}</div>
+    </div>`).join('');
+
+  const hash = decodeData.canonical_hash || '';
+  document.getElementById('hash-preview').textContent = hash || 'Not available';
+
+  document.getElementById('decoded-card').style.display = '';
+  document.getElementById('action-card').style.display = '';
+}
+
+function showRevokedCard(data) {
+  document.getElementById('revoked-card').style.display = '';
+  if (data.revocation_reason) {
+    const el = document.getElementById('revoked-reason');
+    el.textContent = 'Revocation reason: ' + data.revocation_reason;
+    el.style.display = '';
+  }
+}
+
+async function startLiveVerify() {
+  const btn = document.getElementById('live-verify-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Contacting college ERP…';
+
+  try {
+    const data = await API.post('/verify/live', { authenx_code: code });
+    sessionStorage.setItem('verify_live', JSON.stringify(data));
+
+    if (data.result === 'verified' || data.result === 'fallback_verified') {
+      window.location.href = '/employer/verified.html';
+    } else if (data.result === 'revoked') {
+      window.location.href = '/employer/revoked.html';
+    } else {
+      throw new Error(data.error || 'Unexpected result: ' + data.result);
+    }
+  } catch (err) {
+    toast('Live verification failed: ' + err.message, 'error', 6000);
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Run Live Verification';
+  }
+}
+
+runChecks();
+</script>
+</body>
+</html>

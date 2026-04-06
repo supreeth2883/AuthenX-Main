@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Verify Academic Credentials</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/employer/verify.css">
+</head>
+<body>
+
+<div id="navbar"></div>
+
+<!-- Hero -->
+<section class="hero">
+  <h1>Verify Degrees in<br>Seconds, Not Weeks</h1>
+  <p>Cryptographic proof of academic credentials — fetched live from the college ERP, every time.</p>
+  <button class="btn btn-lg" onclick="scrollToLogin()"
+    style="background:white;color:var(--ax-blue);font-weight:700;box-shadow:0 8px 32px rgba(0,0,0,0.2)">
+    Start Verifying →
+  </button>
+
+  <div class="feature-cards" style="margin-top:48px">
+    <div class="feature-card">
+      <div class="icon">⚡</div>
+      <h3>Instant Results</h3>
+      <p>Live verification in under a second — no waiting, no calls to colleges</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🔐</div>
+      <h3>Cryptographic Proof</h3>
+      <p>Ed25519 signatures ensure credentials are mathematically impossible to forge</p>
+    </div>
+    <div class="feature-card">
+      <div class="icon">🚫</div>
+      <h3>Revocation Aware</h3>
+      <p>If a credential is revoked by the college, verification fails immediately</p>
+    </div>
+  </div>
+</section>
+
+<!-- Login Section -->
+<section id="login-section" style="max-width:480px;margin:60px auto;padding:0 20px">
+  <div class="card">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:22px;font-weight:800;color:var(--ax-gray-900)">Employer Login</div>
+      <div style="font-size:13px;color:var(--ax-gray-500);margin-top:6px">Sign in to start verifying credentials</div>
+    </div>
+
+    <div style="background:var(--ax-sky);border-radius:8px;padding:12px;margin-bottom:20px;font-size:12px;color:var(--ax-gray-600)">
+      <strong>Demo Account:</strong>
+      <span onclick="fillCreds('admin@authenx.in','Admin@123')" style="cursor:pointer;color:var(--ax-blue);margin-left:8px">Fill credentials ↗</span>
+    </div>
+
+    <div id="error-box" style="background:var(--ax-revoked-bg);border:1px solid #FECACA;border-radius:8px;padding:10px 14px;color:#991B1B;font-size:13px;margin-bottom:16px;display:none"></div>
+
+    <div class="form-group">
+      <label>Email Address</label>
+      <input type="email" id="email" placeholder="hr@company.com">
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="password" placeholder="Enter password">
+    </div>
+
+    <button class="btn btn-primary btn-lg" style="width:100%;justify-content:center" id="login-btn" onclick="doLogin()">
+      Sign In
+    </button>
+
+    <div style="margin-top:20px;text-align:center;font-size:12px;color:var(--ax-gray-400)">
+      College admin? <a href="/college/index.html" style="color:var(--ax-blue)">Go to College Portal →</a>
+    </div>
+  </div>
+</section>
+
+<div id="toast-container" class="toast-container"></div>
+
+<script src="/employer/verify.js"></script>
+<script>
+document.getElementById('navbar').innerHTML = renderNavbar();
+
+// Auto-redirect if already logged in
+if (Auth.isLoggedIn()) window.location.href = '/employer/verify.html';
+
+function scrollToLogin() {
+  document.getElementById('login-section').scrollIntoView({ behavior: 'smooth' });
+  document.getElementById('email').focus();
+}
+
+function fillCreds(email, pass) {
+  document.getElementById('email').value = email;
+  document.getElementById('password').value = pass;
+}
+
+document.getElementById('password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') doLogin();
+});
+
+async function doLogin() {
+  const email    = document.getElementById('email').value.trim();
+  const password = document.getElementById('password').value;
+  const btn      = document.getElementById('login-btn');
+  const errBox   = document.getElementById('error-box');
+
+  if (!email || !password) { errBox.textContent = 'Please enter email and password.'; errBox.style.display=''; return; }
+  errBox.style.display = 'none';
+
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Signing in…';
+
+  try {
+    const res = await fetch('http://localhost:3000/v1/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Login failed');
+
+    localStorage.setItem('ax_emp_token', data.token);
+    window.location.href = '/employer/verify.html';
+  } catch (err) {
+    errBox.textContent = err.message;
+    errBox.style.display = '';
+    btn.disabled = false;
+    btn.textContent = 'Sign In';
+  }
+}
+</script>
+</body>
+</html>

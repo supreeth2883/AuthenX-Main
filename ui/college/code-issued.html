@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Credential Issued</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/college/app.css">
+<script src="/shared/authenx-code.js"></script>
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-mount"></div>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h2>Credential Issued ✓</h2>
+        <p>AuthenX Code generated and ready to share</p>
+      </div>
+      <div class="topbar-actions">
+        <a href="/college/issue.html" class="btn btn-primary">Issue Another</a>
+      </div>
+    </header>
+
+    <main class="page-content">
+      <div style="max-width:740px;margin:0 auto">
+
+        <!-- Success Banner -->
+        <div style="background:var(--ax-verified-bg);border:1px solid #A7F3D0;border-radius:12px;padding:20px;margin-bottom:24px;display:flex;align-items:center;gap:16px">
+          <div style="width:48px;height:48px;background:var(--ax-verified);border-radius:50%;display:flex;align-items:center;justify-content:center;color:white;font-size:22px;flex-shrink:0">✓</div>
+          <div>
+            <div style="font-size:16px;font-weight:700;color:#065F46">Credential Issued Successfully</div>
+            <div style="font-size:13px;color:#047857;margin-top:2px" id="issued-subtitle">Loading details…</div>
+          </div>
+        </div>
+
+        <!-- Code Display -->
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-header">
+            <div>
+              <div class="card-title">AuthenX Code</div>
+              <div class="card-sub">Share this with the student — they give it to employers for verification</div>
+            </div>
+          </div>
+
+          <div class="code-display" id="code-display">
+            <button class="copy-btn" onclick="copyCode()" id="copy-btn">Copy</button>
+            <div id="code-text" style="padding-right:60px;word-break:break-all;letter-spacing:0.3px"></div>
+          </div>
+
+          <div style="display:flex;gap:10px;margin-top:16px;flex-wrap:wrap">
+            <button class="btn btn-primary" onclick="copyCode()">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"/></svg>
+              Copy Code
+            </button>
+            <button class="btn btn-secondary" onclick="shareViaEmail()">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+              Share via Email
+            </button>
+            <button class="btn btn-secondary" onclick="downloadTxt()">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              Download .txt
+            </button>
+          </div>
+        </div>
+
+        <!-- AuthenX Visual Code + Details -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+          <!-- AuthenX Visual Code -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:16px">AuthenX Visual Code</div>
+            <div id="axcode-container" style="display:flex;justify-content:center">
+              <canvas id="axcode-canvas" style="max-width:100%;height:auto"></canvas>
+            </div>
+            <div style="font-size:11px;color:var(--ax-gray-400);text-align:center;margin-top:12px">Scan with AuthenX Verifier only</div>
+            <button class="btn btn-secondary" onclick="downloadPNG()" style="width:100%;margin-top:10px;justify-content:center">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+              Download PNG
+            </button>
+          </div>
+
+          <!-- Token Details -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:16px">Token Details</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <div>
+                <div style="font-size:11px;color:var(--ax-gray-400);text-transform:uppercase;letter-spacing:0.5px">Student Ref</div>
+                <div style="font-family:monospace;font-size:13px;color:var(--ax-gray-900);font-weight:600" id="detail-ref">—</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--ax-gray-400);text-transform:uppercase;letter-spacing:0.5px">Student Name</div>
+                <div style="font-size:13px;color:var(--ax-gray-900);font-weight:600" id="detail-name">—</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--ax-gray-400);text-transform:uppercase;letter-spacing:0.5px">Token ID</div>
+                <div style="font-family:monospace;font-size:11px;color:var(--ax-gray-500)" id="detail-token-id">—</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--ax-gray-400);text-transform:uppercase;letter-spacing:0.5px">Issued At</div>
+                <div style="font-size:12px;color:var(--ax-gray-700)" id="detail-issued-at">—</div>
+              </div>
+              <div>
+                <div style="font-size:11px;color:var(--ax-gray-400);text-transform:uppercase;letter-spacing:0.5px">Status</div>
+                <span class="badge badge-active">● Active</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Actions -->
+        <div style="display:flex;gap:12px;margin-top:20px">
+          <a href="/college/tokens.html" class="btn btn-secondary">View All Tokens</a>
+          <a href="/college/issue.html" class="btn btn-primary" style="flex:1;justify-content:center">Issue Another Credential</a>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/college/app.js"></script>
+<script>
+if (!Auth.requireAuth()) {}
+document.getElementById('sidebar-mount').innerHTML = renderSidebar('issue');
+initNav('issue');
+
+const code      = sessionStorage.getItem('issued_code');
+const tokenId   = sessionStorage.getItem('issued_token_id');
+const ref       = sessionStorage.getItem('issued_ref');
+const name      = sessionStorage.getItem('issued_name');
+
+if (!code) {
+  // No code in session — redirect
+  window.location.href = '/college/issue.html';
+}
+
+// Populate UI
+document.getElementById('code-text').textContent = code;
+document.getElementById('detail-ref').textContent = ref || '—';
+document.getElementById('detail-name').textContent = name || '—';
+document.getElementById('detail-token-id').textContent = tokenId || '—';
+document.getElementById('detail-issued-at').textContent = new Date().toLocaleString('en-IN');
+document.getElementById('issued-subtitle').textContent =
+  `Credential for ${name || ref} has been cryptographically signed and registered in AuthenX`;
+
+// Generate AuthenX Visual Code
+if (code) {
+  try {
+    AuthenXCode.render(document.getElementById('axcode-canvas'), code);
+  } catch(e) {
+    document.getElementById('axcode-container').innerHTML = '<div style="color:var(--ax-gray-400);font-size:13px;padding:20px;text-align:center">Visual code generation failed<br>Copy the text code instead</div>';
+    console.error('AuthenX Code render error:', e);
+  }
+}
+
+function downloadPNG() {
+  const canvas = document.getElementById('axcode-canvas');
+  if (!canvas) return;
+  const a = document.createElement('a');
+  a.href = canvas.toDataURL('image/png');
+  a.download = `authenx-code-${ref || 'credential'}.png`;
+  a.click();
+  toast('AuthenX Code image downloaded', 'success');
+}
+
+function copyCode() {
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = document.getElementById('copy-btn');
+    btn.textContent = 'Copied!';
+    toast('AuthenX Code copied to clipboard', 'success');
+    setTimeout(() => btn.textContent = 'Copy', 2000);
+  });
+}
+
+function shareViaEmail() {
+  const subject = encodeURIComponent(`Your AuthenX Credential Code — ${name || ref}`);
+  const body = encodeURIComponent(
+    `Dear ${name || ref},\n\nYour academic credential has been verified and issued by AuthenX.\n\n` +
+    `Your AuthenX Code:\n${code}\n\n` +
+    `Share this code with employers when they request credential verification.\n` +
+    `The code can be verified at: http://localhost:3001\n\n` +
+    `— AuthenX Verification System`
+  );
+  window.location.href = `mailto:?subject=${subject}&body=${body}`;
+}
+
+function downloadTxt() {
+  const content = `AuthenX Credential Code\n${'='.repeat(40)}\nStudent: ${name||ref}\nToken ID: ${tokenId}\nIssued: ${new Date().toISOString()}\n\n${code}\n`;
+  const blob = new Blob([content], { type: 'text/plain' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `authenx-code-${ref}.txt`;
+  a.click();
+}
+</script>
+</body>
+</html>

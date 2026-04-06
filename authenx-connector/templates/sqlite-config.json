@@ -1,0 +1,27 @@
+{
+  "_comment": "AuthenX Connector — SQLite Config Template. Rename to college-config.json.",
+  "college_id": "REPLACE_WITH_AUTHENX_COLLEGE_ID",
+  "college_name": "Your College Name",
+  "port": 9000,
+  "db_type": "sqlite",
+  "db": {
+    "path": "./connector.db",
+    "table": "students",
+    "ref_column": "student_ref_token"
+  },
+  "field_mapping": {
+    "name": { "type": "column", "column": "name" },
+    "degree": { "type": "column", "column": "degree" },
+    "branch": { "type": "column", "column": "branch" },
+    "cgpa": { "type": "column", "column": "cgpa" },
+    "graduation_year": { "type": "column", "column": "graduation_year" },
+    "issue_date": { "type": "column", "column": "issue_date" },
+    "credential_type": { "type": "direct", "value": "DEGREE_CERTIFICATE" },
+    "status": {
+      "type": "map_values",
+      "column": "status",
+      "active_values": ["active", "alumni", "graduated"],
+      "inactive_values": ["withdrawn", "deferred", "suspended", "expelled", "cancelled"]
+    }
+  }
+}

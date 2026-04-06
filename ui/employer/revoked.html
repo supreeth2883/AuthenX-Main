@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Revoked ✕</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/employer/verify.css">
+<style>
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .fade-in { animation: fadeSlideIn 0.5s ease both; }
+  .fade-in-delay-1 { animation: fadeSlideIn 0.5s 0.15s ease both; }
+  .fade-in-delay-2 { animation: fadeSlideIn 0.5s 0.30s ease both; }
+</style>
+</head>
+<body>
+<div id="navbar"></div>
+
+<div class="verify-layout">
+  <div id="stepper-mount"></div>
+
+  <!-- Revoked banner -->
+  <div class="result-banner revoked fade-in" style="margin-bottom:20px">
+    <div class="result-icon revoked" style="font-size:36px">✕</div>
+    <div class="result-title revoked">Credential Revoked</div>
+    <div class="result-subtitle">This credential has been revoked by the issuing institution</div>
+    <div style="margin-top:12px;font-size:12px;color:#991B1B;opacity:0.8" id="revoked-time"></div>
+  </div>
+
+  <!-- Warning box -->
+  <div class="fade-in" style="margin-bottom:20px;padding:20px;background:var(--ax-revoked-bg);border:2px solid #FECACA;border-radius:12px">
+    <div style="display:flex;gap:14px;align-items:flex-start">
+      <div style="width:40px;height:40px;border-radius:50%;background:var(--ax-revoked);color:white;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">⚠</div>
+      <div>
+        <div style="font-size:15px;font-weight:700;color:#7F1D1D;margin-bottom:6px">Do Not Accept This Credential</div>
+        <div style="font-size:13px;color:#991B1B;line-height:1.6">
+          The issuing college has explicitly revoked this academic credential. This means it is no longer
+          valid and must not be accepted for employment, admission, or any other purpose. The code is
+          authentic but the underlying credential has been cancelled.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Revocation details -->
+  <div class="card fade-in-delay-1" style="margin-bottom:20px">
+    <div style="font-size:14px;font-weight:600;color:var(--ax-gray-700);margin-bottom:16px;display:flex;align-items:center;gap:8px">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+      Revocation Details
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="revoke-fields"></div>
+  </div>
+
+  <!-- Partial verification checks -->
+  <div class="card fade-in-delay-1" style="margin-bottom:20px">
+    <div style="font-size:14px;font-weight:600;color:var(--ax-gray-700);margin-bottom:16px;display:flex;align-items:center;gap:8px">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+      Verification Results
+    </div>
+
+    <div id="partial-checks"></div>
+
+    <div style="margin-top:16px;padding:12px;background:var(--ax-revoked-bg);border-radius:8px;border:1px solid #FECACA">
+      <div style="font-size:12px;color:#991B1B;line-height:1.6">
+        The code is genuine and was issued by an authenticated college — but the credential has been
+        explicitly revoked. This prevents acceptance even though the cryptographic signature is valid.
+      </div>
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="card fade-in-delay-2">
+    <button class="btn btn-primary btn-lg" onclick="window.location.href = '/employer/verify.html'" style="width:100%;justify-content:center">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+      Verify Another Credential
+    </button>
+    <div style="margin-top:12px;text-align:center;font-size:12px;color:var(--ax-gray-400)">
+      Contact the candidate's institution for clarification on the revocation
+    </div>
+  </div>
+</div>
+
+<div id="toast-container" class="toast-container"></div>
+
+<script src="/employer/verify.js"></script>
+<script>
+if (!Auth.requireAuth()) {}
+document.getElementById('navbar').innerHTML = renderNavbar();
+document.getElementById('stepper-mount').innerHTML = renderStepper(3);
+
+const liveRaw   = sessionStorage.getItem('verify_live');
+const decodeRaw = sessionStorage.getItem('verify_decode');
+
+if (!decodeRaw) { window.location.href = '/employer/verify.html'; }
+
+// Support two entry points:
+//   1. Via decoding.html (early exit when registry shows revoked — no live data)
+//   2. Via live verify returning result=revoked
+const liveData   = liveRaw ? JSON.parse(liveRaw) : null;
+const decodeData = JSON.parse(decodeRaw);
+// checks are at top level in live response
+const checks = liveData ? {
+  hash_match:   liveData.hash_match,
+  issuance_sig: liveData.issuance_sig,
+  live_sig:     liveData.live_sig,
+} : {};
+
+// Revoked time
+document.getElementById('revoked-time').textContent =
+  'Checked at ' + new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) +
+  ' on ' + new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+
+// Revocation fields — data comes from decode response + live response
+const collegeName = liveData?.college || (decodeData.college?.name) || (typeof decodeData.college === 'string' ? decodeData.college : '—');
+const revokedAtRaw = decodeData.revoked_at || liveData?.revoked_at;
+const revokedAt = revokedAtRaw
+  ? new Date(revokedAtRaw).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  : '—';
+const revocationReason = decodeData.revocation_reason || liveData?.reason || 'Not specified';
+
+const revokeFieldDefs = [
+  { label: 'Issuing Institution', value: collegeName },
+  { label: 'Revocation Date',     value: revokedAt },
+  { label: 'Credential Type',     value: (decodeData.credential_type || '—').replace(/_/g,' ') },
+  { label: 'Status',              value: '<span style="color:var(--ax-revoked);font-weight:700">REVOKED</span>' },
+  { label: 'Student Reference',   value: decodeData.student_ref_token || '—' },
+  { label: 'Revocation Reason',   value: revocationReason },
+];
+document.getElementById('revoke-fields').innerHTML = revokeFieldDefs.map(f => `
+  <div style="padding:12px;background:var(--ax-gray-50);border-radius:8px;border:1px solid var(--ax-gray-200)">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:var(--ax-gray-400);font-weight:500;margin-bottom:4px">${f.label}</div>
+    <div style="font-size:14px;font-weight:600;color:var(--ax-gray-900)">${f.value}</div>
+  </div>`).join('');
+
+// Partial checks — code format and registry checks passed, revocation check failed
+const partialCheckDefs = [
+  { label: 'Code Format',        pass: true,  desc: 'AX1. prefix valid — genuine AuthenX code' },
+  { label: 'Found in Registry',  pass: true,  desc: 'Token located in AuthenX registry' },
+  { label: 'Hash Integrity',     pass: liveData ? (checks.hash_match === true || checks.hash_match === 1) : null,
+    desc: 'Canonical hash matches stored record' },
+  { label: 'Issuance Signature', pass: liveData ? (checks.issuance_sig === true || checks.issuance_sig === 1) : null,
+    desc: 'Original issuance Ed25519 signature' },
+  { label: 'Not Revoked',        pass: false, desc: 'Credential has been revoked — verification fails' },
+];
+document.getElementById('partial-checks').innerHTML = partialCheckDefs.map(c => {
+  const cls = c.pass === true ? 'pass' : c.pass === false ? 'fail' : '';
+  const icon = c.pass === true ? '✓' : c.pass === false ? '✕' : '—';
+  const iconCls = c.pass === true ? 'pass' : c.pass === false ? 'fail' : 'pending';
+  return `
+  <div class="check-row ${cls}">
+    <div class="check-icon ${iconCls}">${icon}</div>
+    <div style="flex:1">
+      <div class="check-label ${cls}">${c.label}</div>
+      <div style="font-size:11px;color:var(--ax-gray-400);margin-top:2px">${c.desc}</div>
+    </div>
+  </div>`;
+}).join('');
+</script>
+</body>
+</html>

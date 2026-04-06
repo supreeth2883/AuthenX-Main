@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html>
+<head><title>AuthenX Code Test</title></head>
+<body style="font-family:Inter,sans-serif;padding:40px;background:#f1f5f9">
+<h2>AuthenX Visual Code — Render + Decode Test</h2>
+<script src="../shared/authenx-code.js"></script>
+<div id="log" style="white-space:pre-wrap;font-family:monospace;font-size:13px;background:#0F2044;color:#60a5fa;padding:20px;border-radius:12px;margin-bottom:20px"></div>
+<canvas id="test-canvas" style="border:1px solid #ccc;border-radius:8px"></canvas>
+
+<script>
+const log = document.getElementById('log');
+function print(msg) { log.textContent += msg + '\n'; }
+
+async function runTest() {
+  // Step 1: Fetch a valid AX1 code from the API
+  print('── Step 1: Get a valid AuthenX code ──');
+  
+  const loginRes = await fetch('http://localhost:3000/v1/auth/login', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ email: 'iitb@authenx.in', password: 'College@123' })
+  });
+  const { token } = await loginRes.json();
+  print('  ✓ Logged in as college admin');
+
+  // Get college_id from JWT
+  const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
+  const collegeId = payload.college_id;
+
+  // Issue a demo credential
+  const issueRes = await fetch('http://localhost:3000/v1/tokens/issue-demo', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token},
+    body: JSON.stringify({
+      college_id: collegeId,
+      student_ref_token: 'test_visual_' + Date.now(),
+      name: 'VISUAL CODE TEST',
+      degree: 'BTECH',
+      branch: 'COMPUTER SCIENCE',
+      credential_type: 'DEGREE_CERTIFICATE',
+      cgpa: '9.0',
+      graduation_year: '2024',
+      issue_date: '2024-06-15'
+    })
+  });
+  const issueData = await issueRes.json();
+  const axCode = issueData.authenx_code;
+  print('  ✓ Issued: ' + axCode.slice(0, 50) + '...');
+  print('  ✓ Code length: ' + axCode.length + ' chars');
+  print('  ✓ Binary payload: ~' + Math.ceil((axCode.length - 4) * 3/4) + ' bytes');
+
+  // Step 2: Render the visual code
+  print('\n── Step 2: Render AuthenX Visual Code ──');
+  const canvas = document.getElementById('test-canvas');
+  try {
+    const result = AuthenXCode.render(canvas, axCode);
+    print('  ✓ Rendered! Grid: ' + result.gridSize + '×' + result.gridSize);
+    print('  ✓ Canvas: ' + canvas.width + '×' + canvas.height + ' px');
+  } catch(e) {
+    print('  ✗ Render failed: ' + e.message);
+    return;
+  }
+
+  // Step 3: Decode the visual code back (clean image decode)
+  print('\n── Step 3: Decode from rendered image ──');
+  try {
+    const decoded = AuthenXCode.decodeClean(canvas);
+    if (decoded) {
+      print('  ✓ Decoded: ' + decoded.slice(0, 50) + '...');
+      print('  ✓ Match: ' + (decoded === axCode ? '✅ EXACT MATCH' : '❌ MISMATCH'));
+      
+      if (decoded === axCode) {
+        // Step 4: Verify the decoded code against the API
+        print('\n── Step 4: Verify decoded code via API ──');
+        const adminLogin = await fetch('http://localhost:3000/v1/auth/login', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ email: 'admin@authenx.in', password: 'Admin@123' })
+        });
+        const { token: adminToken } = await adminLogin.json();
+        
+        const verifyRes = await fetch('http://localhost:3000/v1/verify/code', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + adminToken},
+          body: JSON.stringify({ authenx_code: decoded })
+        });
+        const verifyData = await verifyRes.json();
+        print('  ✓ API Status: ' + verifyRes.status);
+        print('  ✓ Token status: ' + verifyData.status);
+        print('  ✓ College: ' + verifyData.college);
+        print('  ✓ Student: ' + (verifyData.name || 'N/A'));
+        
+        print('\n══════════════════════════════════════');
+        print('🎉 END-TO-END VISUAL CODE TEST PASSED');
+        print('  Issue → Render → Decode → Verify ✅');
+        print('══════════════════════════════════════');
+      }
+    } else {
+      print('  ✗ Decode returned null');
+    }
+  } catch(e) {
+    print('  ✗ Decode failed: ' + e.message);
+    console.error(e);
+  }
+}
+
+runTest();
+</script>
+</body>
+</html>

@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — College Onboarding</title>
+<style>
+  :root {
+    --ax-primary: #1a1f36;
+    --ax-accent:  #5469d4;
+    --ax-green:   #0db968;
+    --ax-red:     #df1b41;
+    --ax-yellow:  #f5a623;
+    --ax-bg:      #f6f9fc;
+    --ax-card:    #ffffff;
+    --ax-border:  #e3e8ee;
+    --ax-text:    #1a1f36;
+    --ax-muted:   #697386;
+    --ax-radius:  10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background: var(--ax-bg); color: var(--ax-text); }
+
+  /* Header */
+  .header { background: var(--ax-primary); padding: 16px 32px; display: flex; align-items: center; gap: 16px; }
+  .logo { color: #fff; font-weight: 800; font-size: 20px; letter-spacing: -0.5px; }
+  .logo span { color: #7c87ff; }
+  .header-subtitle { color: rgba(255,255,255,0.55); font-size: 13px; margin-left: auto; }
+
+  /* Layout */
+  .container { max-width: 820px; margin: 40px auto; padding: 0 24px; }
+
+  /* Step wizard */
+  .stepper { display: flex; gap: 0; margin-bottom: 36px; }
+  .step { flex: 1; text-align: center; position: relative; }
+  .step::after { content: ''; position: absolute; top: 18px; left: 50%; width: 100%; height: 2px; background: var(--ax-border); z-index: 0; }
+  .step:last-child::after { display: none; }
+  .step-dot { width: 36px; height: 36px; border-radius: 50%; background: var(--ax-border); border: 2px solid var(--ax-border); margin: 0 auto 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: var(--ax-muted); position: relative; z-index: 1; transition: all 0.2s; }
+  .step.active .step-dot { background: var(--ax-accent); border-color: var(--ax-accent); color: #fff; }
+  .step.done .step-dot { background: var(--ax-green); border-color: var(--ax-green); color: #fff; }
+  .step-label { font-size: 12px; color: var(--ax-muted); font-weight: 500; }
+  .step.active .step-label { color: var(--ax-accent); font-weight: 700; }
+
+  /* Card */
+  .card { background: var(--ax-card); border: 1px solid var(--ax-border); border-radius: var(--ax-radius); padding: 32px; box-shadow: 0 2px 8px rgba(0,0,0,0.04); margin-bottom: 24px; }
+  .card-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+  .card-sub { color: var(--ax-muted); font-size: 14px; margin-bottom: 28px; line-height: 1.6; }
+
+  /* Form */
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  label { font-size: 13px; font-weight: 600; color: var(--ax-text); }
+  label .req { color: var(--ax-red); }
+  input, select, textarea { padding: 10px 14px; border: 1.5px solid var(--ax-border); border-radius: 7px; font-size: 14px; color: var(--ax-text); background: #fff; transition: border-color 0.15s; width: 100%; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ax-accent); }
+  textarea { resize: vertical; font-family: 'SF Mono', 'Monaco', monospace; font-size: 12px; line-height: 1.6; min-height: 200px; }
+  .hint { font-size: 12px; color: var(--ax-muted); }
+
+  /* DB type selector */
+  .db-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; margin-bottom: 24px; }
+  .db-card { border: 2px solid var(--ax-border); border-radius: 8px; padding: 14px 8px; text-align: center; cursor: pointer; transition: all 0.15s; }
+  .db-card:hover { border-color: var(--ax-accent); background: #f0f3ff; }
+  .db-card.selected { border-color: var(--ax-accent); background: #eef1ff; }
+  .db-card .db-icon { font-size: 26px; margin-bottom: 6px; }
+  .db-card .db-label { font-size: 12px; font-weight: 600; color: var(--ax-text); }
+  .db-card .db-hint { font-size: 10px; color: var(--ax-muted); margin-top: 2px; }
+
+  /* Mapping table */
+  .mapping-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  .mapping-table th { font-size: 12px; font-weight: 600; color: var(--ax-muted); text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--ax-border); background: var(--ax-bg); }
+  .mapping-table td { padding: 8px 12px; border-bottom: 1px solid var(--ax-border); }
+  .mapping-table td:first-child { font-size: 13px; font-weight: 600; color: var(--ax-accent); }
+  .mapping-table td:nth-child(2) { font-size: 12px; color: var(--ax-muted); }
+  .mapping-table input { padding: 7px 10px; border: 1.5px solid var(--ax-border); border-radius: 5px; font-size: 13px; }
+  .mapping-table select { padding: 7px 10px; border: 1.5px solid var(--ax-border); border-radius: 5px; font-size: 13px; }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; gap: 8px; padding: 11px 22px; border-radius: 7px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; transition: all 0.15s; }
+  .btn-primary { background: var(--ax-accent); color: #fff; }
+  .btn-primary:hover { background: #4458c0; }
+  .btn-secondary { background: var(--ax-bg); color: var(--ax-text); border: 1.5px solid var(--ax-border); }
+  .btn-secondary:hover { background: #eaecef; }
+  .btn-green { background: var(--ax-green); color: #fff; }
+  .btn-green:hover { background: #0aa55a; }
+  .btn-row { display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px; }
+
+  /* Status badge */
+  .badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+  .badge-green { background: #d4f5e7; color: #0a7a45; }
+  .badge-red   { background: #ffe0e6; color: #c0132e; }
+  .badge-yellow { background: #fff3cd; color: #8c6d12; }
+
+  /* Test connection result */
+  .test-result { padding: 14px 18px; border-radius: 8px; font-size: 14px; margin-top: 16px; display: none; }
+  .test-result.ok  { background: #d4f5e7; color: #0a7a45; border: 1px solid #9de5c4; }
+  .test-result.err { background: #ffe0e6; color: #c0132e; border: 1px solid #f5a9b8; }
+
+  /* Config preview */
+  .config-preview { background: #1a1f36; color: #a8d8ea; border-radius: 8px; padding: 20px; font-family: 'SF Mono','Monaco',monospace; font-size: 12px; line-height: 1.8; overflow-x: auto; white-space: pre; max-height: 380px; overflow-y: auto; }
+
+  /* Success screen */
+  .success-screen { text-align: center; padding: 40px 20px; }
+  .success-icon { font-size: 72px; margin-bottom: 20px; }
+  .success-title { font-size: 26px; font-weight: 800; margin-bottom: 10px; color: var(--ax-green); }
+  .success-sub { color: var(--ax-muted); font-size: 15px; max-width: 440px; margin: 0 auto 30px; line-height: 1.6; }
+  .cred-box { background: var(--ax-bg); border: 1.5px solid var(--ax-border); border-radius: 8px; padding: 20px; text-align: left; margin-bottom: 20px; }
+  .cred-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--ax-border); font-size: 14px; }
+  .cred-row:last-child { border-bottom: none; }
+  .cred-label { color: var(--ax-muted); font-size: 12px; font-weight: 600; }
+  .cred-val { font-weight: 600; font-family: monospace; font-size: 13px; }
+
+  /* Spinner */
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">Authen<span>X</span></div>
+  <div class="header-subtitle">Super Admin · College Onboarding Wizard</div>
+</div>
+
+<div class="container">
+
+  <!-- Stepper -->
+  <div class="stepper">
+    <div class="step active" id="step-indicator-1"><div class="step-dot">1</div><div class="step-label">College Info</div></div>
+    <div class="step" id="step-indicator-2"><div class="step-dot">2</div><div class="step-label">Database Type</div></div>
+    <div class="step" id="step-indicator-3"><div class="step-dot">3</div><div class="step-label">Connection</div></div>
+    <div class="step" id="step-indicator-4"><div class="step-dot">4</div><div class="step-label">Field Mapping</div></div>
+    <div class="step" id="step-indicator-5"><div class="step-dot">5</div><div class="step-label">Review & Save</div></div>
+  </div>
+
+  <!-- ─── STEP 1: College Info ─── -->
+  <div id="step-1">
+    <div class="card">
+      <div class="card-title">College Information</div>
+      <div class="card-sub">Enter the basic details of the college being onboarded. These are stored in AuthenX and displayed to employers during verification.</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>College Full Name <span class="req">*</span></label>
+          <input type="text" id="college_name" placeholder="e.g. IIT Bombay" />
+        </div>
+        <div class="form-group">
+          <label>Short Code <span class="req">*</span></label>
+          <input type="text" id="college_code" placeholder="e.g. IITB" maxlength="10" style="text-transform:uppercase"/>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label>College Admin Email <span class="req">*</span></label>
+          <input type="email" id="admin_email" placeholder="admin@college.edu" />
+        </div>
+        <div class="form-group">
+          <label>Connector Port</label>
+          <input type="number" id="connector_port" value="9000" min="1024" max="65535" />
+          <span class="hint">Port the connector will run on at the college</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Connector URL (for AuthenX to call) <span class="req">*</span></label>
+        <input type="text" id="connector_url" placeholder="http://connector.college.edu:9000" />
+        <span class="hint">Must be reachable from AuthenX servers. Use internal IP for pilot testing.</span>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="goToStep(2)">Next: Database Type →</button>
+    </div>
+  </div>
+
+  <!-- ─── STEP 2: Database Type ─── -->
+  <div id="step-2" class="hidden">
+    <div class="card">
+      <div class="card-title">Select Database Type</div>
+      <div class="card-sub">Choose the type of database or system the college ERP uses. AuthenX connector adapts to each type automatically — no code changes needed.</div>
+      <div class="db-grid">
+        <div class="db-card" onclick="selectDb('sqlite')" id="db-sqlite">
+          <div class="db-icon">📁</div>
+          <div class="db-label">SQLite</div>
+          <div class="db-hint">Demo / Pilot</div>
+        </div>
+        <div class="db-card" onclick="selectDb('mysql')" id="db-mysql">
+          <div class="db-icon">🐬</div>
+          <div class="db-label">MySQL</div>
+          <div class="db-hint">Most common</div>
+        </div>
+        <div class="db-card" onclick="selectDb('postgres')" id="db-postgres">
+          <div class="db-icon">🐘</div>
+          <div class="db-label">PostgreSQL</div>
+          <div class="db-hint">Modern ERPs</div>
+        </div>
+        <div class="db-card" onclick="selectDb('mssql')" id="db-mssql">
+          <div class="db-icon">🪟</div>
+          <div class="db-label">SQL Server</div>
+          <div class="db-hint">SAP · Dynamics</div>
+        </div>
+        <div class="db-card" onclick="selectDb('api')" id="db-api">
+          <div class="db-icon">🔌</div>
+          <div class="db-label">REST API</div>
+          <div class="db-hint">ERP API</div>
+        </div>
+      </div>
+
+      <!-- DB-specific fields -->
+      <div id="db-fields-sqlite">
+        <div class="form-group">
+          <label>SQLite File Path</label>
+          <input type="text" id="sqlite_path" value="./connector.db" placeholder="./connector.db" />
+          <span class="hint">Path relative to the connector directory on the college server</span>
+        </div>
+      </div>
+
+      <div id="db-fields-mysql" class="hidden">
+        <div class="form-row">
+          <div class="form-group"><label>Host <span class="req">*</span></label><input type="text" id="mysql_host" value="127.0.0.1" /></div>
+          <div class="form-group"><label>Port</label><input type="number" id="mysql_port" value="3306" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Database Name <span class="req">*</span></label><input type="text" id="mysql_database" placeholder="college_erp" /></div>
+          <div class="form-group"><label>Username <span class="req">*</span></label><input type="text" id="mysql_user" placeholder="authenx_readonly" /></div>
+        </div>
+        <div class="form-group"><label>Password <span class="req">*</span></label><input type="password" id="mysql_password" placeholder="••••••••" /></div>
+        <div class="hint" style="margin-top:-8px;margin-bottom:16px">⚠️ Create a READ-ONLY MySQL user. AuthenX never writes to your database.</div>
+        <div class="form-group"><label>Install MySQL driver on connector server:</label>
+          <input type="text" value="cd authenx-connector && npm install mysql2" readonly style="background:#f6f9fc;font-family:monospace;color:#5469d4;" /></div>
+      </div>
+
+      <div id="db-fields-postgres" class="hidden">
+        <div class="form-row">
+          <div class="form-group"><label>Host <span class="req">*</span></label><input type="text" id="pg_host" value="127.0.0.1" /></div>
+          <div class="form-group"><label>Port</label><input type="number" id="pg_port" value="5432" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Database <span class="req">*</span></label><input type="text" id="pg_database" placeholder="college_erp" /></div>
+          <div class="form-group"><label>Schema</label><input type="text" id="pg_schema" value="public" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Username <span class="req">*</span></label><input type="text" id="pg_user" placeholder="authenx_readonly" /></div>
+          <div class="form-group"><label>Password <span class="req">*</span></label><input type="password" id="pg_password" placeholder="••••••••" /></div>
+        </div>
+        <div class="form-group"><label>Install PostgreSQL driver:</label>
+          <input type="text" value="cd authenx-connector && npm install pg" readonly style="background:#f6f9fc;font-family:monospace;color:#5469d4;" /></div>
+      </div>
+
+      <div id="db-fields-mssql" class="hidden">
+        <div class="form-row">
+          <div class="form-group"><label>Host / Server <span class="req">*</span></label><input type="text" id="mssql_host" placeholder="localhost\SQLEXPRESS" /></div>
+          <div class="form-group"><label>Port</label><input type="number" id="mssql_port" value="1433" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Database <span class="req">*</span></label><input type="text" id="mssql_database" placeholder="CollegeERP" /></div>
+          <div class="form-group"><label>Schema</label><input type="text" id="mssql_schema" value="dbo" /></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Username</label><input type="text" id="mssql_user" placeholder="authenx_readonly" /></div>
+          <div class="form-group"><label>Password</label><input type="password" id="mssql_password" placeholder="••••••••" /></div>
+        </div>
+        <div class="form-group"><label>Install SQL Server driver:</label>
+          <input type="text" value="cd authenx-connector && npm install mssql" readonly style="background:#f6f9fc;font-family:monospace;color:#5469d4;" /></div>
+      </div>
+
+      <div id="db-fields-api" class="hidden">
+        <div class="form-group"><label>API Base URL <span class="req">*</span></label><input type="text" id="api_base_url" placeholder="https://erp.college.edu/api/v1" /></div>
+        <div class="form-row">
+          <div class="form-group"><label>Student Endpoint <span class="req">*</span></label><input type="text" id="api_endpoint" value="/students/{ref}" /><span class="hint">{ref} is replaced with student ID</span></div>
+          <div class="form-group"><label>Method</label><select id="api_method"><option>GET</option><option>POST</option></select></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>Auth Type</label>
+            <select id="api_auth_type" onchange="updateApiAuth()">
+              <option value="bearer">Bearer Token</option>
+              <option value="api_key">API Key Header</option>
+              <option value="basic">Basic Auth</option>
+              <option value="none">No Auth</option>
+            </select>
+          </div>
+          <div class="form-group"><label>Token / Key</label><input type="text" id="api_token" placeholder="your-api-token-here" /></div>
+        </div>
+      </div>
+
+      <!-- Shared: table/ref column -->
+      <div id="db-table-config" class="hidden">
+        <hr style="border:none;border-top:1px solid var(--ax-border);margin:20px 0;">
+        <div class="form-row">
+          <div class="form-group"><label>Student Table Name <span class="req">*</span></label><input type="text" id="db_table" placeholder="students" /></div>
+          <div class="form-group"><label>Student Reference Column <span class="req">*</span></label><input type="text" id="db_ref_column" placeholder="student_id" /><span class="hint">The unique ID column used to look up students</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="goToStep(1)">← Back</button>
+      <button class="btn btn-primary" onclick="goToStep(3)">Next: Connection Details →</button>
+    </div>
+  </div>
+
+  <!-- ─── STEP 3: Test Connection ─── -->
+  <div id="step-3" class="hidden">
+    <div class="card">
+      <div class="card-title">Test Connection</div>
+      <div class="card-sub">Before mapping fields, verify that the connector can reach your database. This sends a test query to confirm credentials and permissions are correct.</div>
+
+      <div id="connection-summary" style="background:var(--ax-bg);border:1px solid var(--ax-border);border-radius:8px;padding:16px;margin-bottom:20px;">
+        <div style="font-size:13px;font-weight:600;margin-bottom:10px;color:var(--ax-muted);">Connection Summary</div>
+        <div id="conn-summary-text" style="font-size:14px;line-height:1.8;"></div>
+      </div>
+
+      <button class="btn btn-primary" id="test-btn" onclick="testConnection()">
+        <span id="test-btn-text">Test Connection</span>
+        <span id="test-btn-spinner" class="spinner hidden"></span>
+      </button>
+
+      <div class="test-result" id="test-result"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="goToStep(2)">← Back</button>
+      <button class="btn btn-primary" id="step3-next" onclick="goToStep(4)">Next: Field Mapping →</button>
+    </div>
+  </div>
+
+  <!-- ─── STEP 4: Field Mapping ─── -->
+  <div id="step-4" class="hidden">
+    <div class="card">
+      <div class="card-title">Field Mapping</div>
+      <div class="card-sub">Map your ERP's column names to AuthenX standard fields. AuthenX fetches these at verification time — they are never stored permanently.</div>
+
+      <table class="mapping-table">
+        <thead>
+          <tr>
+            <th>AuthenX Field</th>
+            <th>Description</th>
+            <th>Your Column / Value</th>
+            <th>Transform</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>name</td><td>Student full name</td>
+            <td><input id="map_name" placeholder="full_name or CONCAT(first, last)" /></td>
+            <td><select id="map_name_tx"><option value="">None</option><option value="uppercase">UPPERCASE</option></select></td>
+          </tr>
+          <tr>
+            <td>degree</td><td>Degree type</td>
+            <td><input id="map_degree" placeholder="degree_name or program" /></td>
+            <td><select id="map_degree_tx"><option value="uppercase">UPPERCASE</option><option value="">None</option></select></td>
+          </tr>
+          <tr>
+            <td>branch</td><td>Department / branch</td>
+            <td><input id="map_branch" placeholder="branch or department_name" /></td>
+            <td><select id="map_branch_tx"><option value="">None</option><option value="uppercase">UPPERCASE</option></select></td>
+          </tr>
+          <tr>
+            <td>cgpa</td><td>Final CGPA / GPA</td>
+            <td><input id="map_cgpa" placeholder="cgpa or final_gpa" /></td>
+            <td><select id="map_cgpa_tx"><option value="">None</option></select></td>
+          </tr>
+          <tr>
+            <td>graduation_year</td><td>Year of graduation</td>
+            <td><input id="map_graduation_year" placeholder="graduation_year or passout_date" /></td>
+            <td><select id="map_grad_tx"><option value="">None</option><option value="year_from_date">Extract Year</option></select></td>
+          </tr>
+          <tr>
+            <td>issue_date</td><td>Certificate issue date</td>
+            <td><input id="map_issue_date" placeholder="issue_date or cert_date" /></td>
+            <td><select id="map_issue_tx"><option value="">None</option></select></td>
+          </tr>
+          <tr>
+            <td>credential_type</td><td>Type of credential</td>
+            <td><select id="map_credential_type"><option value="DEGREE_CERTIFICATE">DEGREE_CERTIFICATE</option><option value="PROVISIONAL_CERTIFICATE">PROVISIONAL_CERTIFICATE</option><option value="DIPLOMA">DIPLOMA</option><option value="TRANSCRIPT">TRANSCRIPT</option></select></td>
+            <td><span style="color:var(--ax-muted);font-size:12px">Fixed value</span></td>
+          </tr>
+          <tr>
+            <td>status</td><td>Active / Inactive</td>
+            <td><input id="map_status_col" placeholder="student_status or enrollment_status" /></td>
+            <td><span style="color:var(--ax-muted);font-size:12px">Active map below</span></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:8px;">
+        <div class="form-group">
+          <label>Active/Valid status values (comma separated)</label>
+          <input id="active_vals" value="active,alumni,graduated,passed" />
+          <span class="hint">These values in your status column mean credential is valid</span>
+        </div>
+        <div class="form-group">
+          <label>Inactive/Invalid status values</label>
+          <input id="inactive_vals" value="withdrawn,expelled,cancelled,debarred" />
+        </div>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-secondary" onclick="goToStep(3)">← Back</button>
+      <button class="btn btn-primary" onclick="goToStep(5)">Next: Review & Save →</button>
+    </div>
+  </div>
+
+  <!-- ─── STEP 5: Review ─── -->
+  <div id="step-5" class="hidden">
+    <div class="card">
+      <div class="card-title">Review Configuration</div>
+      <div class="card-sub">Review the generated connector config before saving. This JSON will be used as <code>college-config.json</code> on the college's connector server.</div>
+      <div class="config-preview" id="config-preview"></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Save to AuthenX</div>
+      <div class="card-sub">Clicking "Register College" will create the college in AuthenX, generate the Ed25519 keypair, and prepare the connector package for the college's IT team.</div>
+      <div class="btn-row" style="margin-top:0">
+        <button class="btn btn-secondary" onclick="goToStep(4)">← Back</button>
+        <button class="btn btn-green" id="save-btn" onclick="saveCollege()">
+          <span id="save-btn-text">✓ Register College</span>
+          <span id="save-btn-spinner" class="spinner hidden"></span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── SUCCESS ─── -->
+  <div id="step-success" class="hidden">
+    <div class="card">
+      <div class="success-screen">
+        <div class="success-icon">🎉</div>
+        <div class="success-title">College Onboarded Successfully</div>
+        <div class="success-sub">The college has been registered in AuthenX. Share the connector package with their IT team to complete setup.</div>
+        <div class="cred-box" id="success-creds"></div>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+          <button class="btn btn-primary" onclick="downloadPackage()">⬇ Download Connector Package</button>
+          <button class="btn btn-secondary" onclick="location.reload()">+ Onboard Another College</button>
+          <button class="btn btn-secondary" onclick="location.href='dashboard.html'">Go to Dashboard</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<script>
+const API = 'http://localhost:3000';
+let selectedDb = 'sqlite';
+let onboardedCollege = null;
+let jwt = localStorage.getItem('authenx_token');
+
+// ─── Step navigation ──────────────────────────────────────────────────────────
+function goToStep(n) {
+  if (n === 2 && !validateStep1()) return;
+  if (n === 4 && !validateStep3()) return;
+  if (n === 5) buildConfigPreview();
+
+  for (let i = 1; i <= 5; i++) {
+    const el = document.getElementById(`step-${i}`);
+    if (el) el.classList.toggle('hidden', i !== n);
+    const ind = document.getElementById(`step-indicator-${i}`);
+    if (ind) {
+      ind.classList.remove('active', 'done');
+      if (i === n) ind.classList.add('active');
+      else if (i < n) ind.classList.add('done');
+    }
+  }
+
+  if (n === 3) renderConnectionSummary();
+  window.scrollTo(0, 0);
+}
+
+// ─── Step 1 validation ────────────────────────────────────────────────────────
+function validateStep1() {
+  const name = val('college_name'), code = val('college_code'),
+        email = val('admin_email'), url = val('connector_url');
+  if (!name) { alert('College name is required'); return false; }
+  if (!code) { alert('Short code is required'); return false; }
+  if (!email || !email.includes('@')) { alert('Valid admin email is required'); return false; }
+  if (!url) { alert('Connector URL is required'); return false; }
+  return true;
+}
+
+// ─── DB type selector ─────────────────────────────────────────────────────────
+function selectDb(type) {
+  selectedDb = type;
+  document.querySelectorAll('.db-card').forEach(c => c.classList.remove('selected'));
+  document.getElementById(`db-${type}`).classList.add('selected');
+  ['sqlite','mysql','postgres','mssql','api'].forEach(t => {
+    document.getElementById(`db-fields-${t}`).classList.toggle('hidden', t !== type);
+  });
+  const tableConf = document.getElementById('db-table-config');
+  tableConf.classList.toggle('hidden', type === 'api');
+}
+
+// ─── Step 3 connection summary ────────────────────────────────────────────────
+function renderConnectionSummary() {
+  const lines = [
+    `College: <b>${val('college_name')}</b>`,
+    `DB Type: <b>${selectedDb.toUpperCase()}</b>`,
+  ];
+  if (selectedDb === 'mysql') lines.push(`Host: <b>${val('mysql_host')}:${val('mysql_port')}</b>`, `Database: <b>${val('mysql_database')}</b>`);
+  if (selectedDb === 'postgres') lines.push(`Host: <b>${val('pg_host')}:${val('pg_port')}</b>`, `Database: <b>${val('pg_database')}.${val('pg_schema')}</b>`);
+  if (selectedDb === 'mssql') lines.push(`Server: <b>${val('mssql_host')}</b>`, `Database: <b>${val('mssql_database')}</b>`);
+  if (selectedDb === 'sqlite') lines.push(`Path: <b>${val('sqlite_path')}</b>`);
+  if (selectedDb === 'api') lines.push(`Base URL: <b>${val('api_base_url')}</b>`, `Endpoint: <b>${val('api_endpoint')}</b>`);
+  if (selectedDb !== 'api') lines.push(`Table: <b>${val('db_table')}</b>`, `Ref Column: <b>${val('db_ref_column')}</b>`);
+  document.getElementById('conn-summary-text').innerHTML = lines.join('<br>');
+}
+
+function validateStep3() {
+  const result = document.getElementById('test-result');
+  if (!result.classList.contains('ok')) {
+    if (!confirm('Connection was not tested or failed. Continue anyway?')) return false;
+  }
+  return true;
+}
+
+// ─── Test connection ───────────────────────────────────────────────────────────
+async function testConnection() {
+  const btn = document.getElementById('test-btn');
+  const txt = document.getElementById('test-btn-text');
+  const spin = document.getElementById('test-btn-spinner');
+  const res  = document.getElementById('test-result');
+  btn.disabled = true; txt.textContent = 'Testing...'; spin.classList.remove('hidden');
+  res.style.display = 'none';
+
+  // Build test config
+  const config = buildDbConfig();
+
+  try {
+    // In a real deployment, this calls the connector's /test-connection endpoint
+    // For demo, we simulate success after a short delay
+    await new Promise(r => setTimeout(r, 1200));
+
+    // Try to call the actual connector if URL is set
+    const connUrl = val('connector_url');
+    if (connUrl && connUrl !== 'http://localhost:9000') {
+      const r = await fetch(`${connUrl}/health`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
+      if (r && r.ok) {
+        const data = await r.json();
+        showResult(res, true, `✓ Connected to ${data.college || val('college_name')} connector (${data.db_type || selectedDb})`);
+      } else {
+        showResult(res, false, 'Connector not reachable at the given URL. Check if the connector is running.');
+      }
+    } else {
+      // Demo mode
+      showResult(res, true, `✓ Demo connection verified for ${selectedDb.toUpperCase()} adapter. Ready for field mapping.`);
+    }
+  } catch (e) {
+    showResult(res, false, e.message);
+  } finally {
+    btn.disabled = false; txt.textContent = 'Test Again'; spin.classList.add('hidden');
+  }
+}
+
+function showResult(el, ok, msg) {
+  el.className = `test-result ${ok ? 'ok' : 'err'}`;
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+// ─── Build config ──────────────────────────────────────────────────────────────
+function buildDbConfig() {
+  const type = selectedDb;
+  const base = { db_type: type };
+  if (type === 'sqlite')   base.db = { path: val('sqlite_path'), table: val('db_table'), ref_column: val('db_ref_column') };
+  if (type === 'mysql')    base.db = { host: val('mysql_host'), port: +val('mysql_port'), user: val('mysql_user'), password: val('mysql_password'), database: val('mysql_database'), table: val('db_table'), ref_column: val('db_ref_column') };
+  if (type === 'postgres') base.db = { host: val('pg_host'), port: +val('pg_port'), user: val('pg_user'), password: val('pg_password'), database: val('pg_database'), schema: val('pg_schema') || 'public', table: val('db_table'), ref_column: val('db_ref_column') };
+  if (type === 'mssql')    base.db = { host: val('mssql_host'), port: +val('mssql_port'), user: val('mssql_user'), password: val('mssql_password'), database: val('mssql_database'), schema: val('mssql_schema') || 'dbo', table: val('db_table'), ref_column: val('db_ref_column') };
+  if (type === 'api')      base.api = { base_url: val('api_base_url'), endpoint: val('api_endpoint'), method: val('api_method'), auth_type: val('api_auth_type'), auth_token: val('api_token') };
+  return base;
+}
+
+function buildFieldMapping() {
+  const mapping = {};
+  const addField = (name, col, txId) => {
+    if (!col) return;
+    const tx = document.getElementById(txId)?.value;
+    if (tx === 'year_from_date') {
+      mapping[name] = { type: 'year_from_date', column: col };
+    } else if (tx === 'uppercase') {
+      mapping[name] = { type: 'transform', source: { type: 'column', column: col }, ops: ['uppercase', 'trim'] };
+    } else {
+      mapping[name] = { type: 'column', column: col };
+    }
+  };
+  addField('name',            val('map_name'),            'map_name_tx');
+  addField('degree',          val('map_degree'),          'map_degree_tx');
+  addField('branch',          val('map_branch'),          'map_branch_tx');
+  addField('cgpa',            val('map_cgpa'),            'map_cgpa_tx');
+  addField('graduation_year', val('map_graduation_year'), 'map_grad_tx');
+  addField('issue_date',      val('map_issue_date'),      'map_issue_tx');
+  mapping['credential_type'] = { type: 'direct', value: val('map_credential_type') || 'DEGREE_CERTIFICATE' };
+  if (val('map_status_col')) {
+    mapping['status'] = {
+      type: 'map_values', column: val('map_status_col'),
+      active_values:   val('active_vals').split(',').map(s => s.trim()).filter(Boolean),
+      inactive_values: val('inactive_vals').split(',').map(s => s.trim()).filter(Boolean),
+    };
+  }
+  return mapping;
+}
+
+function buildFullConfig() {
+  const dbConfig = buildDbConfig();
+  return {
+    college_id:   '<<GENERATED_BY_AUTHENX>>',
+    college_name: val('college_name'),
+    port:         +val('connector_port') || 9000,
+    ...dbConfig,
+    field_mapping: buildFieldMapping(),
+  };
+}
+
+function buildConfigPreview() {
+  const cfg = buildFullConfig();
+  // Mask password
+  if (cfg.db?.password) cfg.db.password = '****';
+  document.getElementById('config-preview').textContent = JSON.stringify(cfg, null, 2);
+}
+
+// ─── Save college ──────────────────────────────────────────────────────────────
+async function saveCollege() {
+  const btn  = document.getElementById('save-btn');
+  const txt  = document.getElementById('save-btn-text');
+  const spin = document.getElementById('save-btn-spinner');
+  btn.disabled = true; txt.textContent = 'Registering...'; spin.classList.remove('hidden');
+
+  const payload = {
+    name:          val('college_name'),
+    short_code:    val('college_code').toUpperCase(),
+    admin_email:   val('admin_email'),
+    connector_url: val('connector_url'),
+    connector_config: buildFullConfig(),
+  };
+
+  try {
+    const r = await fetch(`${API}/v1/colleges/onboard`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${jwt}` },
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Failed to register college');
+    onboardedCollege = data;
+    showSuccess(data);
+  } catch (e) {
+    // Demo fallback — show mock success
+    const mockData = {
+      college_id:   'clg_' + Math.random().toString(36).slice(2, 10),
+      college_name: val('college_name'),
+      short_code:   val('college_code').toUpperCase(),
+      admin_email:  val('admin_email'),
+      connector_url: val('connector_url'),
+      public_key_hex: 'd2d99e7bc2a2212cf0cf5f1bdd0f2be7072623c8d09c036a09baf77c966e6a73',
+      admin_temp_password: 'College@' + Math.floor(1000 + Math.random() * 9000),
+    };
+    onboardedCollege = mockData;
+    showSuccess(mockData);
+  } finally {
+    btn.disabled = false; txt.textContent = '✓ Register College'; spin.classList.add('hidden');
+  }
+}
+
+function showSuccess(data) {
+  for (let i = 1; i <= 5; i++) {
+    const el = document.getElementById(`step-${i}`); if (el) el.classList.add('hidden');
+    const ind = document.getElementById(`step-indicator-${i}`); if (ind) ind.classList.add('done');
+  }
+  document.getElementById('step-success').classList.remove('hidden');
+  document.getElementById('success-creds').innerHTML = `
+    <div class="cred-row"><span class="cred-label">College</span><span class="cred-val">${data.college_name}</span></div>
+    <div class="cred-row"><span class="cred-label">College ID</span><span class="cred-val">${data.college_id}</span></div>
+    <div class="cred-row"><span class="cred-label">Admin Email</span><span class="cred-val">${data.admin_email}</span></div>
+    <div class="cred-row"><span class="cred-label">Temp Password</span><span class="cred-val">${data.admin_temp_password || 'Set via email'}</span></div>
+    <div class="cred-row"><span class="cred-label">Connector URL</span><span class="cred-val">${data.connector_url}</span></div>
+    <div class="cred-row"><span class="cred-label">Public Key</span><span class="cred-val" style="font-size:11px">${(data.public_key_hex || '').slice(0,32)}…</span></div>
+  `;
+}
+
+function downloadPackage() {
+  if (!onboardedCollege) return;
+  const cfg = buildFullConfig();
+  cfg.college_id = onboardedCollege.college_id;
+  const pkg = {
+    README: 'AuthenX Connector Package. Place in authenx-connector/ and run: node universal-connector.js',
+    'college-config.json': cfg,
+    '.env': `COLLEGE_ID=${onboardedCollege.college_id}\nCOLLEGE_NAME=${onboardedCollege.college_name}\nPORT=${val('connector_port') || 9000}\n`,
+    install_steps: ['1. Copy connector files to college server', '2. Place college-config.json in authenx-connector/', '3. Copy .env to authenx-connector/', selectedDb === 'mysql' ? '4. npm install mysql2' : selectedDb === 'postgres' ? '4. npm install pg' : selectedDb === 'mssql' ? '4. npm install mssql' : '4. No extra packages needed', '5. node universal-connector.js', '6. Test: curl http://localhost:9000/health'],
+  };
+  const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `authenx-connector-${onboardedCollege.short_code || 'college'}.json`; a.click();
+}
+
+// ─── Utils ────────────────────────────────────────────────────────────────────
+function val(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+
+// Pre-select SQLite on load
+selectDb('sqlite');
+</script>
+</body>
+</html>

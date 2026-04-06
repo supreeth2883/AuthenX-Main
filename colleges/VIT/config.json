@@ -1,0 +1,53 @@
+{
+  "college_id": "bc3be153-9ab1-45aa-b03a-e15d26d2109e",
+  "college_name": "VIT Vellore",
+  "db_type": "sqlite",
+  "db": {
+    "path": "./erp.db",
+    "table": "student_records",
+    "ref_column": "stu_ref"
+  },
+  "field_mapping": {
+    "name": {
+      "type": "column",
+      "column": "full_name"
+    },
+    "degree": {
+      "type": "column",
+      "column": "programme"
+    },
+    "branch": {
+      "type": "column",
+      "column": "branch"
+    },
+    "cgpa": {
+      "type": "column",
+      "column": "final_cgpa"
+    },
+    "graduation_year": {
+      "type": "column",
+      "column": "grad_year"
+    },
+    "issue_date": {
+      "type": "column",
+      "column": "issue_dt"
+    },
+    "credential_type": {
+      "type": "direct",
+      "value": "DEGREE_CERTIFICATE"
+    },
+    "status": {
+      "type": "map_values",
+      "column": "status",
+      "active_values": [
+        "Active",
+        "Alumni",
+        "Graduated"
+      ],
+      "inactive_values": [
+        "Withdrawn",
+        "Suspended"
+      ]
+    }
+  }
+}

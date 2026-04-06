@@ -1,0 +1,53 @@
+{
+  "college_id": "e5dad220-5492-4dae-8003-3cb7cdc7d7d6",
+  "college_name": "Anna University",
+  "db_type": "sqlite",
+  "db": {
+    "path": "./erp.db",
+    "table": "student_records",
+    "ref_column": "stu_ref"
+  },
+  "field_mapping": {
+    "name": {
+      "type": "column",
+      "column": "full_name"
+    },
+    "degree": {
+      "type": "column",
+      "column": "programme"
+    },
+    "branch": {
+      "type": "column",
+      "column": "branch"
+    },
+    "cgpa": {
+      "type": "column",
+      "column": "final_cgpa"
+    },
+    "graduation_year": {
+      "type": "column",
+      "column": "grad_year"
+    },
+    "issue_date": {
+      "type": "column",
+      "column": "issue_dt"
+    },
+    "credential_type": {
+      "type": "direct",
+      "value": "DEGREE_CERTIFICATE"
+    },
+    "status": {
+      "type": "map_values",
+      "column": "status",
+      "active_values": [
+        "Active",
+        "Alumni",
+        "Graduated"
+      ],
+      "inactive_values": [
+        "Withdrawn",
+        "Suspended"
+      ]
+    }
+  }
+}

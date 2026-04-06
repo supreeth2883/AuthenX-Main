@@ -1,0 +1,195 @@
+# AuthenX — Full Production Stack
+# docker-compose up -d
+#
+# Services:
+#   - authenx-server    (port 3000)  — Main API server
+#   - authenx-hsm       (port 9099)  — Hardware Security Module (key vault)
+#   - connector-iitb    (port 9001)  — IIT Bombay connector
+#   - connector-iitd    (port 9002)  — IIT Delhi connector
+#   - connector-iitm    (port 9003)  — IIT Madras connector
+#   - connector-nitt    (port 9004)  — NIT Trichy connector
+#   - connector-nitw    (port 9005)  — NIT Warangal connector
+#   - connector-bits    (port 9006)  — BITS Pilani connector
+#   - connector-vit     (port 9007)  — VIT Vellore connector
+#   - connector-srm     (port 9008)  — SRM Chennai connector
+#   - connector-anna    (port 9009)  — Anna University connector
+#   - connector-du      (port 9010)  — Delhi University connector
+
+services:
+  # ─── AuthenX Core Server ───────────────────────────────────────────────
+  authenx-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - HSM_PORT=9099
+    volumes:
+      - ./authenx-node/authenx.db:/app/authenx.db
+      - ./authenx-node/aes_key.json:/app/aes_key.json
+      - ./authenx-node/seed_codes.json:/app/seed_codes.json
+      - ./authenx-node/connector_key.json:/app/connector_key.json
+      - ./authenx-hsm/keys:/app/hsm-keys
+      - ./colleges/registry.json:/app/colleges/registry.json
+      - ./logs:/app/logs
+    depends_on:
+      authenx-hsm:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - authenx-net
+
+  # ─── HSM Key Vault ─────────────────────────────────────────────────────
+  authenx-hsm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ["node", "src/server.js"]
+    working_dir: /hsm
+    ports:
+      - "9099:9099"
+    environment:
+      - PORT=9099
+    volumes:
+      - ./authenx-hsm:/hsm
+    restart: unless-stopped
+    networks:
+      - authenx-net
+
+  # ─── College Connectors ────────────────────────────────────────────────
+  connector-iitb:
+    build:
+      context: .
+      dockerfile: Dockerfile.connector
+    ports:
+      - "9001:9001"
+    env_file: colleges/IITB/.env
+    volumes:
+      - ./colleges/IITB:/app/data
+    restart: unless-stopped
+    networks:
+      - authenx-net
+
+  connector-iitd:
+    build:
+      context: .
+      dockerfile: Dockerfile.connector
+    ports:
+      - "9002:9002"
+    env_file: colleges/IITD/.env
+    volumes:
+      - ./colleges/IITD:/app/data
+    restart: unless-stopped
+    networks:
+      - authenx-net
+
+  connector-iitm:
+    build:
+      context: .
+      dockerfile: Dockerfile.connector
+    ports:
+      - "9003:9003"
+    env_file: colleges/IITM/.env
+    volumes:
+      - ./colleges/IITM:/app/data
+    restart: unless-stopped
+    networks:
+      - authenx-net
+
+  connector-nitt:
+    build:
+      context: .
+      dockerfile: Dockerfile.connector
+    ports:
+      - "9004:9004"
+    env_file: colleges/NITT/.env
+    volumes:
+      - ./colleges/NITT:/app/data
+    restart: unless-stopped
+    networks:
+      - authenx-net
+
+  connector-nitw:
+    build:
+      context: .
+      dockerfile: Dockerfile.connector
+    ports:
+      - "9005:9005"
+    env_file: colleges/NITW/.env
+    volumes:
+      - ./colleges/NITW:/app/data
+    restart: unless-stopped
+    networks:
+      - authenx-net
+
+  connector-bits:
+    build:
+      context: .
+      dockerfile: Dockerfile.connector
+    ports:
+      - "9006:9006"
+    env_file: colleges/BITS/.env
+    volumes:
+      - ./colleges/BITS:/app/data
+    restart: unless-stopped
+    networks:
+      - authenx-net
+
+  connector-vit:
+    build:
+      context: .
+      dockerfile: Dockerfile.connector
+    ports:
+      - "9007:9007"
+    env_file: colleges/VIT/.env
+    volumes:
+      - ./colleges/VIT:/app/data
+    restart: unless-stopped
+    networks:
+      - authenx-net
+
+  connector-srm:
+    build:
+      context: .
+      dockerfile: Dockerfile.connector
+    ports:
+      - "9008:9008"
+    env_file: colleges/SRM/.env
+    volumes:
+      - ./colleges/SRM:/app/data
+    restart: unless-stopped
+    networks:
+      - authenx-net
+
+  connector-anna:
+    build:
+      context: .
+      dockerfile: Dockerfile.connector
+    ports:
+      - "9009:9009"
+    env_file: colleges/ANNA/.env
+    volumes:
+      - ./colleges/ANNA:/app/data
+    restart: unless-stopped
+    networks:
+      - authenx-net
+
+  connector-du:
+    build:
+      context: .
+      dockerfile: Dockerfile.connector
+    ports:
+      - "9010:9010"
+    env_file: colleges/DU/.env
+    volumes:
+      - ./colleges/DU:/app/data
+    restart: unless-stopped
+    networks:
+      - authenx-net
+
+networks:
+  authenx-net:
+    driver: bridge

@@ -1,0 +1,28 @@
+{
+  "name": "authenx",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AuthenX — Privacy-First Academic Credential Verification Infrastructure",
+  "workspaces": [
+    "packages/api",
+    "packages/connector",
+    "packages/web"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=packages/api",
+    "dev:connector": "npm run dev --workspace=packages/connector",
+    "dev:web": "npm run dev --workspace=packages/web",
+    "dev": "concurrently \"npm run dev:api\" \"npm run dev:connector\" \"npm run dev:web\"",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "db:migrate": "npm run db:migrate --workspace=packages/api"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}

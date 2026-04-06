@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/college/app.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-mount"></div>
+
+  <div class="main-content">
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="topbar-title">
+        <h2>Dashboard</h2>
+        <p>Welcome back — here's what's happening</p>
+      </div>
+      <div class="topbar-actions">
+        <div class="connector-status" id="connector-status">
+          <div class="pulse-dot"></div> Checking...
+        </div>
+        <a href="/college/issue.html" class="btn btn-primary">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          Issue Credential
+        </a>
+      </div>
+    </header>
+
+    <!-- Content -->
+    <main class="page-content">
+      <!-- Stats -->
+      <div class="stats-grid" id="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">Total Tokens</div>
+          <div class="stat-value" id="stat-tokens">—</div>
+          <div class="stat-sub" id="stat-tokens-sub">Loading...</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-label">Active Tokens</div>
+          <div class="stat-value" id="stat-active">—</div>
+          <div class="stat-sub">Currently valid credentials</div>
+        </div>
+        <div class="stat-card amber">
+          <div class="stat-label">Verifications</div>
+          <div class="stat-value" id="stat-verifs">—</div>
+          <div class="stat-sub" id="stat-verifs-sub">This month</div>
+        </div>
+        <div class="stat-card red">
+          <div class="stat-label">Revoked</div>
+          <div class="stat-value" id="stat-revoked">—</div>
+          <div class="stat-sub">Invalid credentials</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px">
+        <!-- Recent Activity -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Recent Activity</div>
+              <div class="card-sub">Last 10 verification events</div>
+            </div>
+            <a href="/college/audit.html" class="btn btn-ghost btn-sm">View All</a>
+          </div>
+          <div id="activity-list">
+            <div style="text-align:center;padding:40px;color:var(--ax-gray-400)">
+              <div class="spinner spinner-blue" style="margin:0 auto 10px"></div>
+              Loading activity...
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div>
+          <!-- Actions Card -->
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-title" style="margin-bottom:16px">Quick Actions</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <a href="/college/issue.html" class="btn btn-primary" style="justify-content:center">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                Issue New Credential
+              </a>
+              <a href="/college/students.html" class="btn btn-secondary" style="justify-content:center">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                View All Students
+              </a>
+              <a href="/college/tokens.html" class="btn btn-secondary" style="justify-content:center">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+                Manage Tokens
+              </a>
+            </div>
+          </div>
+
+          <!-- Connector Status Card -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:12px">ERP Connector Status</div>
+            <div id="connector-detail" style="font-size:13px;color:var(--ax-gray-500)">Checking connector...</div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/college/app.js"></script>
+<script>
+if (!Auth.requireAuth()) {} // redirects if not logged in
+
+// Mount sidebar
+document.getElementById('sidebar-mount').innerHTML = renderSidebar('dashboard');
+initNav('dashboard');
+
+// Load dashboard data
+async function loadDashboard() {
+  try {
+    const [tokensData, auditData] = await Promise.all([
+      API.get('/tokens'),
+      API.get('/audit/stats'),
+    ]);
+
+    const tokens = tokensData.tokens || [];
+    const active  = tokens.filter(t => t.status === 'active').length;
+    const revoked = tokens.filter(t => t.status === 'revoked').length;
+
+    document.getElementById('stat-tokens').textContent = tokens.length;
+    document.getElementById('stat-tokens-sub').textContent = `${active} active, ${revoked} revoked`;
+    document.getElementById('stat-active').textContent = active;
+    document.getElementById('stat-revoked').textContent = revoked;
+    document.getElementById('stat-verifs').textContent = auditData.total_verifications || 0;
+    document.getElementById('stat-verifs-sub').textContent = `${auditData.successful_verifications || 0} verified, ${auditData.failed_verifications || 0} failed`;
+
+  } catch (err) {
+    console.error('Stats error:', err);
+    toast('Could not load statistics: ' + err.message, 'error');
+  }
+
+  try {
+    const auditLog = await API.get('/audit?limit=10');
+    renderActivity(auditLog.events || []);
+  } catch (err) {
+    document.getElementById('activity-list').innerHTML = '<div style="text-align:center;padding:30px;color:var(--ax-gray-400)">Could not load activity</div>';
+  }
+
+  // Check connector
+  checkConnectorDetail();
+}
+
+function renderActivity(events) {
+  const container = document.getElementById('activity-list');
+  if (!events.length) {
+    container.innerHTML = '<div class="empty-state" style="padding:30px"><p>No activity yet.</p></div>';
+    return;
+  }
+
+  const eventTypeMap = {
+    'live_verify':  ['VERIFIED', 'event-VERIFIED'],
+    'code_decode':  ['DECODED',  'event-DECODED'],
+  };
+
+  container.innerHTML = events.map(e => {
+    const [label, cls] = eventTypeMap[e.request_type] || ['EVENT', 'event-DECODED'];
+    const resultClass = e.result === 'verified' ? 'event-VERIFIED' : e.result === 'revoked' ? 'event-REVOKED' : 'event-DECODED';
+    return `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--ax-gray-100)">
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="event-badge ${resultClass}">${e.result?.toUpperCase()}</span>
+          <div>
+            <div style="font-size:13px;font-weight:500;color:var(--ax-gray-800)">${e.employer_name || 'Unknown'}</div>
+            <div style="font-size:11px;color:var(--ax-gray-400)">${e.request_type?.replace('_', ' ')}</div>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--ax-gray-400);text-align:right">${formatDate(e.created_at)}</div>
+      </div>`;
+  }).join('');
+}
+
+async function checkConnectorDetail() {
+  const el = document.getElementById('connector-detail');
+  try {
+    const res = await fetch(Auth.getConnectorUrl('/health'));
+    if (res.ok) {
+      const data = await res.json();
+      el.innerHTML = `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="color:var(--ax-verified);font-size:18px">✓</span>
+          <span style="color:var(--ax-verified);font-weight:600">Live ERP Connected</span>
+        </div>
+        <div style="font-size:12px;color:var(--ax-gray-400)">College: ${data.college || '—'}</div>
+        <div style="font-size:12px;color:var(--ax-gray-400);margin-top:4px">Port: 9000 · Running since ${new Date(data.timestamp).toLocaleTimeString()}</div>`;
+    } else throw new Error();
+  } catch {
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <span style="color:var(--ax-pending);font-size:18px">⚠</span>
+        <span style="color:var(--ax-pending);font-weight:600">Mock ERP Active</span>
+      </div>
+      <div style="font-size:12px;color:var(--ax-gray-400)">Start connector: <code>node connector.js</code></div>`;
+  }
+}
+
+loadDashboard();
+</script>
+</body>
+</html>

@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Students</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/college/app.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-mount"></div>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h2>Students</h2>
+        <p>All credential holders at your college</p>
+      </div>
+      <div class="topbar-actions">
+        <div class="connector-status" id="connector-status"><div class="pulse-dot"></div> Checking...</div>
+        <a href="/college/issue.html" class="btn btn-primary">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          Issue Credential
+        </a>
+      </div>
+    </header>
+
+    <main class="page-content">
+      <!-- Search & Filter -->
+      <div class="search-bar">
+        <div class="search-input-wrap">
+          <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          <input type="text" id="search-input" placeholder="Search by student ref or name…" oninput="filterTable()">
+        </div>
+        <div class="filter-tabs">
+          <button class="filter-tab active" data-filter="all" onclick="setFilter('all',this)">All</button>
+          <button class="filter-tab" data-filter="active" onclick="setFilter('active',this)">Active</button>
+          <button class="filter-tab" data-filter="revoked" onclick="setFilter('revoked',this)">Revoked</button>
+        </div>
+      </div>
+
+      <!-- Table -->
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Student Ref</th>
+              <th>Credential Type</th>
+              <th>Issued</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="students-tbody">
+            <tr><td colspan="5" style="text-align:center;padding:48px">
+              <div class="spinner spinner-blue" style="margin:0 auto 12px"></div>
+              Loading students...
+            </td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div style="margin-top:12px;font-size:12px;color:var(--ax-gray-400)" id="count-label"></div>
+    </main>
+  </div>
+</div>
+
+<script src="/college/app.js"></script>
+<script>
+if (!Auth.requireAuth()) {}
+document.getElementById('sidebar-mount').innerHTML = renderSidebar('students');
+initNav('students');
+
+let allTokens = [];
+let currentFilter = 'all';
+
+async function loadStudents() {
+  try {
+    const data = await API.get('/tokens');
+    allTokens = data.tokens || [];
+    renderTable(allTokens);
+  } catch (err) {
+    document.getElementById('students-tbody').innerHTML =
+      `<tr><td colspan="5" style="text-align:center;padding:40px;color:var(--ax-gray-400)">Error: ${err.message}</td></tr>`;
+  }
+}
+
+function filterTable() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  let filtered = allTokens;
+  if (currentFilter !== 'all') filtered = filtered.filter(t => t.status === currentFilter);
+  if (q) filtered = filtered.filter(t =>
+    (t.student_ref_token||'').toLowerCase().includes(q) ||
+    (t.credential_type||'').toLowerCase().includes(q)
+  );
+  renderTable(filtered);
+}
+
+function setFilter(filter, el) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-tab').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  filterTable();
+}
+
+function renderTable(tokens) {
+  const tbody = document.getElementById('students-tbody');
+  document.getElementById('count-label').textContent = `Showing ${tokens.length} record${tokens.length !== 1 ? 's' : ''}`;
+
+  if (!tokens.length) {
+    tbody.innerHTML = `<tr><td colspan="5">
+      <div class="empty-state">
+        <h3>No students found</h3>
+        <p>Issue a credential to see students here</p>
+        <a href="/college/issue.html" class="btn btn-primary">Issue Credential</a>
+      </div>
+    </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = tokens.map(t => `
+    <tr>
+      <td>
+        <div style="font-family:monospace;font-size:12px;font-weight:600;color:var(--ax-gray-900)">${t.student_ref_token}</div>
+        <div style="font-size:11px;color:var(--ax-gray-400)">${t.id?.slice(0,8)}…</div>
+      </td>
+      <td><span style="font-size:12px">${(t.credential_type||'—').replace(/_/g,' ')}</span></td>
+      <td style="font-size:12px">${formatDate(t.issued_at)}</td>
+      <td>${statusBadge(t.status)}</td>
+      <td>
+        <div style="display:flex;gap:6px;align-items:center">
+          <a href="/college/tokens.html" class="btn btn-ghost btn-sm">View</a>
+          ${t.status === 'active' ? `<button class="btn btn-danger btn-sm" onclick="revokeToken('${t.id}','${t.student_ref_token}')">Revoke</button>` : '<span style="font-size:12px;color:var(--ax-gray-400)">Revoked</span>'}
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+function revokeToken(tokenId, ref) {
+  showModal({
+    title: 'Revoke Credential',
+    body: `<p>You are about to revoke the credential for <strong>${ref}</strong>.</p>
+           <p style="margin-top:10px;color:var(--ax-revoked)">⚠ This cannot be undone. The credential will immediately fail future verifications.</p>
+           <div class="form-group" style="margin-top:16px">
+             <label>Reason for Revocation</label>
+             <input type="text" id="revoke-reason" placeholder="e.g. Student withdrew from program" style="margin-top:6px">
+           </div>`,
+    confirmText: 'Revoke Credential',
+    confirmClass: 'btn-danger',
+    onConfirm: async () => {
+      const reason = document.getElementById('revoke-reason')?.value || 'Revoked by admin';
+      try {
+        await API.post('/tokens/revoke', { token_id: tokenId, reason });
+        toast('Credential revoked successfully', 'success');
+        loadStudents();
+      } catch (err) {
+        toast('Revoke failed: ' + err.message, 'error');
+      }
+    }
+  });
+}
+
+loadStudents();
+</script>
+</body>
+</html>

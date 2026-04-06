@@ -1,0 +1,38 @@
+{
+  "_comment": "AuthenX Connector — PostgreSQL Config Template. Run: npm install pg",
+  "college_id": "REPLACE_WITH_AUTHENX_COLLEGE_ID",
+  "college_name": "Your College Name",
+  "port": 9000,
+  "db_type": "postgres",
+  "db": {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "user": "authenx_readonly",
+    "password": "REPLACE_WITH_DB_PASSWORD",
+    "database": "college_erp",
+    "schema": "public",
+    "ssl": false,
+    "pool_size": 5,
+    "table": "students",
+    "ref_column": "hall_ticket_number"
+  },
+  "field_mapping": {
+    "name": {
+      "type": "concat",
+      "columns": ["first_name", "last_name"],
+      "separator": " "
+    },
+    "degree": { "type": "column", "column": "course_name" },
+    "branch": { "type": "column", "column": "specialization" },
+    "cgpa": { "type": "coalesce", "columns": ["cgpa", "gpa", "percentage"], "default": "0" },
+    "graduation_year": { "type": "year_from_date", "column": "passout_date" },
+    "issue_date": { "type": "column", "column": "degree_awarded_date" },
+    "credential_type": { "type": "direct", "value": "DEGREE_CERTIFICATE" },
+    "status": {
+      "type": "map_values",
+      "column": "enrollment_status",
+      "active_values": ["graduated", "alumni", "passed_out"],
+      "inactive_values": ["dropped", "expelled", "cancelled", "debarred"]
+    }
+  }
+}

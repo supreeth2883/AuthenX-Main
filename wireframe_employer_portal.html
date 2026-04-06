@@ -1,0 +1,1265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Employer Verification Portal (Wireframe)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ─── AuthenX Design System ─── */
+  :root {
+    --ax-navy:        #0F2044;
+    --ax-blue:        #1D4ED8;
+    --ax-blue-light:  #3B82F6;
+    --ax-sky:         #EFF6FF;
+    --ax-verified:    #059669;
+    --ax-verified-bg: #ECFDF5;
+    --ax-revoked:     #DC2626;
+    --ax-revoked-bg:  #FEF2F2;
+    --ax-pending:     #D97706;
+    --ax-pending-bg:  #FFFBEB;
+    --ax-gray-50:     #F8FAFC;
+    --ax-gray-100:    #F1F5F9;
+    --ax-gray-200:    #E2E8F0;
+    --ax-gray-400:    #94A3B8;
+    --ax-gray-500:    #64748B;
+    --ax-gray-600:    #475569;
+    --ax-gray-700:    #334155;
+    --ax-gray-800:    #1E293B;
+    --ax-gray-900:    #0F172A;
+    --ax-white:       #FFFFFF;
+    --ax-gradient-hero: linear-gradient(135deg, #0F2044 0%, #1D4ED8 100%);
+    --ax-gradient-verified: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--ax-gray-50);
+    color: var(--ax-gray-800);
+    font-size: 15px;
+    line-height: 1.6;
+  }
+
+  /* ─── Screen Container ─── */
+  .screen { display: none; min-height: 100vh; }
+  .screen.active { display: flex; flex-direction: column; }
+
+  /* ─── Nav Pills ─── */
+  .nav-pills {
+    position: fixed;
+    top: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    background: rgba(15,32,68,0.95);
+    border: 1px solid rgba(255,255,255,0.12);
+    padding: 8px 12px;
+    border-radius: 40px;
+    z-index: 9999;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  }
+  .nav-pills button {
+    background: transparent;
+    border: none;
+    color: rgba(255,255,255,0.55);
+    font-size: 12px;
+    font-weight: 500;
+    font-family: 'Inter', sans-serif;
+    padding: 6px 14px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: all 150ms ease;
+    white-space: nowrap;
+  }
+  .nav-pills button:hover { background: rgba(255,255,255,0.08); color: white; }
+  .nav-pills button.active { background: var(--ax-blue); color: white; }
+
+  /* ─── Utility Classes ─── */
+  .btn-primary {
+    background: var(--ax-blue);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .btn-primary:hover { background: #1E40AF; transform: translateY(-1px); }
+
+  .btn-secondary {
+    background: var(--ax-gray-100);
+    color: var(--ax-gray-700);
+    border: 1px solid var(--ax-gray-200);
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .btn-secondary:hover { background: var(--ax-gray-200); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--ax-blue);
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .btn-ghost:hover { background: var(--ax-sky); }
+
+  .badge-verified {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--ax-verified-bg);
+    color: #065F46;
+    border: 1px solid #A7F3D0;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge-revoked {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--ax-revoked-bg);
+    color: #991B1B;
+    border: 1px solid #FECACA;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .badge-active {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: var(--ax-sky);
+    color: #1E40AF;
+    border: 1px solid #BFDBFE;
+    padding: 3px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .card {
+    background: white;
+    border: 1px solid var(--ax-gray-200);
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04);
+    padding: 24px;
+  }
+
+  /* ─── Topbar (Employer) ─── */
+  .topbar-emp {
+    height: 64px;
+    background: white;
+    border-bottom: 1px solid var(--ax-gray-200);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 32px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .topbar-emp .logo {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 18px; color: var(--ax-navy);
+    text-decoration: none;
+  }
+  .topbar-emp .logo-mark {
+    width: 34px; height: 34px;
+    background: var(--ax-gradient-hero);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 13px;
+  }
+  .topbar-emp .tagline {
+    font-size: 11px;
+    color: var(--ax-gray-400);
+    font-weight: 400;
+  }
+  .topbar-emp .emp-nav { display: flex; align-items: center; gap: 8px; }
+  .topbar-emp .emp-nav a {
+    font-size: 14px; font-weight: 500; color: var(--ax-gray-600);
+    text-decoration: none; padding: 6px 12px; border-radius: 6px;
+    transition: all 150ms ease;
+  }
+  .topbar-emp .emp-nav a:hover { background: var(--ax-gray-100); color: var(--ax-gray-800); }
+  .topbar-emp .emp-nav .active-link { color: var(--ax-blue); }
+
+  /* ─── SCREEN 1: Landing / Login ─── */
+  .landing-hero {
+    background: var(--ax-gradient-hero);
+    padding: 80px 32px 64px;
+    text-align: center;
+    color: white;
+    position: relative;
+    overflow: hidden;
+  }
+  .landing-hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+  }
+  .hero-shield {
+    width: 72px; height: 72px;
+    background: rgba(255,255,255,0.12);
+    border: 2px solid rgba(255,255,255,0.25);
+    border-radius: 18px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 24px;
+    font-size: 32px;
+  }
+  .landing-hero h1 {
+    font-size: 40px; font-weight: 700; line-height: 1.2;
+    margin-bottom: 16px;
+  }
+  .landing-hero h1 span { color: #93C5FD; }
+  .landing-hero p {
+    font-size: 17px; color: rgba(255,255,255,0.75);
+    max-width: 520px; margin: 0 auto 32px;
+    line-height: 1.6;
+  }
+  .hero-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .hero-btn-primary {
+    background: white; color: var(--ax-blue);
+    border: none; padding: 13px 28px; border-radius: 8px;
+    font-size: 15px; font-weight: 700;
+    font-family: 'Inter', sans-serif; cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .hero-btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
+  .hero-btn-outline {
+    background: transparent; color: white;
+    border: 2px solid rgba(255,255,255,0.4);
+    padding: 13px 28px; border-radius: 8px;
+    font-size: 15px; font-weight: 600;
+    font-family: 'Inter', sans-serif; cursor: pointer;
+    transition: all 150ms ease;
+  }
+  .hero-btn-outline:hover { border-color: white; background: rgba(255,255,255,0.08); }
+
+  .trust-bar {
+    background: rgba(0,0,0,0.2);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding: 16px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+  .trust-item {
+    display: flex; align-items: center; gap: 8px;
+    color: rgba(255,255,255,0.7); font-size: 13px; font-weight: 500;
+  }
+  .trust-item .dot { width: 6px; height: 6px; border-radius: 50%; background: #34D399; }
+
+  .features-section {
+    max-width: 900px;
+    margin: 48px auto;
+    padding: 0 32px;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+  }
+  .feature-card {
+    background: white;
+    border: 1px solid var(--ax-gray-200);
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    transition: all 200ms ease;
+  }
+  .feature-card:hover { transform: translateY(-2px); box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+  .feature-icon {
+    width: 48px; height: 48px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 14px; font-size: 22px;
+  }
+  .feature-card h3 { font-size: 15px; font-weight: 600; color: var(--ax-gray-800); margin-bottom: 8px; }
+  .feature-card p { font-size: 13px; color: var(--ax-gray-500); line-height: 1.5; }
+
+  /* Login section in Screen 1 */
+  .login-section {
+    max-width: 400px;
+    margin: 0 auto 48px;
+    padding: 0 32px;
+  }
+  .login-section h2 {
+    font-size: 22px; font-weight: 700; color: var(--ax-gray-900);
+    text-align: center; margin-bottom: 6px;
+  }
+  .login-section .login-sub {
+    font-size: 14px; color: var(--ax-gray-500);
+    text-align: center; margin-bottom: 28px;
+  }
+  .form-group { margin-bottom: 16px; }
+  .form-group label {
+    display: block; font-size: 13px; font-weight: 500;
+    color: var(--ax-gray-700); margin-bottom: 6px;
+  }
+  .form-group input {
+    width: 100%; padding: 10px 14px;
+    border: 1px solid var(--ax-gray-200); border-radius: 8px;
+    font-size: 15px; color: var(--ax-gray-800);
+    font-family: 'Inter', sans-serif;
+    outline: none; transition: all 150ms ease;
+  }
+  .form-group input:focus {
+    border-color: var(--ax-blue-light);
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+  }
+  .form-group input::placeholder { color: var(--ax-gray-400); }
+
+  /* ─── SCREEN 2: Paste Code ─── */
+  .verify-shell {
+    display: flex; flex-direction: column; min-height: 100vh;
+    background: var(--ax-gray-50);
+  }
+  .verify-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    padding: 48px 24px;
+  }
+
+  /* Stepper */
+  .stepper {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 40px;
+    position: relative;
+  }
+  .step {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    position: relative; z-index: 1;
+  }
+  .step-circle {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700;
+    border: 2px solid var(--ax-gray-200);
+    background: white; color: var(--ax-gray-400);
+    transition: all 200ms ease;
+  }
+  .step.done .step-circle {
+    background: var(--ax-verified); border-color: var(--ax-verified); color: white;
+  }
+  .step.active .step-circle {
+    background: var(--ax-blue); border-color: var(--ax-blue); color: white;
+    box-shadow: 0 0 0 4px rgba(29,78,216,0.15);
+  }
+  .step-label { font-size: 12px; font-weight: 500; color: var(--ax-gray-400); white-space: nowrap; }
+  .step.active .step-label { color: var(--ax-blue); }
+  .step.done .step-label { color: var(--ax-verified); }
+  .step-connector {
+    width: 80px; height: 2px; background: var(--ax-gray-200);
+    margin: 0 0 18px;
+    transition: background 200ms ease;
+  }
+  .step-connector.done { background: var(--ax-verified); }
+
+  .paste-card {
+    background: white;
+    border: 1px solid var(--ax-gray-200);
+    border-radius: 16px;
+    padding: 40px;
+    width: 100%; max-width: 560px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 8px 32px rgba(0,0,0,0.06);
+  }
+  .paste-card .card-icon {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: var(--ax-sky);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 26px; margin-bottom: 20px;
+  }
+  .paste-card h2 { font-size: 22px; font-weight: 700; color: var(--ax-gray-900); margin-bottom: 8px; }
+  .paste-card p { font-size: 14px; color: var(--ax-gray-500); margin-bottom: 24px; line-height: 1.5; }
+  .code-textarea {
+    width: 100%;
+    padding: 14px 16px;
+    border: 2px dashed var(--ax-gray-200);
+    border-radius: 10px;
+    font-size: 13px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--ax-gray-800);
+    background: var(--ax-gray-50);
+    resize: vertical;
+    min-height: 100px;
+    outline: none;
+    transition: all 150ms ease;
+    letter-spacing: 0.5px;
+  }
+  .code-textarea:focus {
+    border-color: var(--ax-blue);
+    border-style: solid;
+    background: white;
+    box-shadow: 0 0 0 3px rgba(29,78,216,0.1);
+  }
+  .code-hint {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--ax-sky); border: 1px solid #BFDBFE;
+    border-radius: 8px; padding: 10px 14px;
+    font-size: 12px; color: #1E40AF;
+    margin: 12px 0 24px;
+  }
+  .sample-code {
+    background: var(--ax-gray-50); border: 1px solid var(--ax-gray-200);
+    border-radius: 8px; padding: 12px 16px;
+    font-size: 12px; font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--ax-gray-500);
+    cursor: pointer;
+    transition: all 150ms ease;
+    margin-bottom: 20px;
+    word-break: break-all;
+  }
+  .sample-code:hover { background: white; border-color: var(--ax-blue-light); color: var(--ax-blue); }
+  .sample-code .code-label { font-size: 11px; color: var(--ax-gray-400); font-family: 'Inter', sans-serif; margin-bottom: 6px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; }
+
+  /* ─── SCREEN 3: Code Decoded ─── */
+  .decoded-card {
+    background: white;
+    border: 1px solid var(--ax-gray-200);
+    border-radius: 16px;
+    padding: 40px;
+    width: 100%; max-width: 560px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 8px 32px rgba(0,0,0,0.06);
+  }
+  .decoded-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .decoded-header h2 { font-size: 20px; font-weight: 700; color: var(--ax-gray-900); margin-bottom: 4px; }
+  .decoded-header p { font-size: 13px; color: var(--ax-gray-500); }
+
+  .info-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 0;
+    border-bottom: 1px solid var(--ax-gray-100);
+  }
+  .info-row:last-child { border-bottom: none; }
+  .info-label { font-size: 12px; font-weight: 600; color: var(--ax-gray-400); text-transform: uppercase; letter-spacing: 0.05em; }
+  .info-value { font-size: 14px; font-weight: 500; color: var(--ax-gray-800); text-align: right; }
+
+  .registry-check {
+    background: var(--ax-sky); border: 1px solid #BFDBFE;
+    border-radius: 10px; padding: 16px 18px;
+    margin: 20px 0;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .registry-check-icon { font-size: 22px; }
+  .registry-check-text h4 { font-size: 14px; font-weight: 600; color: #1E40AF; margin-bottom: 2px; }
+  .registry-check-text p { font-size: 12px; color: #3B82F6; }
+
+  .hash-display {
+    background: var(--ax-gray-50);
+    border: 1px solid var(--ax-gray-200);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 11px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: var(--ax-gray-500);
+    word-break: break-all;
+    margin-top: 16px;
+  }
+  .hash-display .hash-label { font-family: 'Inter', sans-serif; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ax-gray-400); margin-bottom: 4px; }
+
+  /* ─── SCREEN 4: Live Verified ─── */
+  .verified-card {
+    background: white;
+    border: 1px solid #A7F3D0;
+    border-radius: 16px;
+    padding: 40px;
+    width: 100%; max-width: 580px;
+    box-shadow: 0 1px 3px rgba(5,150,105,0.08), 0 8px 32px rgba(5,150,105,0.08);
+    position: relative;
+    overflow: hidden;
+  }
+  .verified-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #059669, #34D399, #059669);
+  }
+  .verified-banner {
+    background: var(--ax-gradient-verified);
+    border: 1px solid #A7F3D0;
+    border-radius: 12px;
+    padding: 20px 24px;
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 28px;
+  }
+  .verified-banner .big-check {
+    width: 52px; height: 52px;
+    background: var(--ax-verified);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; color: white; flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(5,150,105,0.25);
+  }
+  .verified-banner-text h2 { font-size: 20px; font-weight: 700; color: #065F46; margin-bottom: 4px; }
+  .verified-banner-text p { font-size: 13px; color: #059669; }
+
+  .student-profile-card {
+    border: 1px solid var(--ax-gray-200);
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 20px;
+  }
+  .student-profile-header {
+    background: var(--ax-gray-50);
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--ax-gray-200);
+    display: flex; align-items: center; gap: 12px;
+  }
+  .student-avatar {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: var(--ax-gradient-hero);
+    display: flex; align-items: center; justify-content: center;
+    color: white; font-weight: 700; font-size: 15px;
+    flex-shrink: 0;
+  }
+  .student-profile-header h3 { font-size: 16px; font-weight: 700; color: var(--ax-gray-900); }
+  .student-profile-header p { font-size: 13px; color: var(--ax-gray-500); }
+  .student-profile-body { padding: 0 18px; }
+
+  .live-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: #ECFDF5; border: 1px solid #6EE7B7; border-radius: 20px;
+    padding: 3px 12px; font-size: 11px; font-weight: 700; color: #065F46;
+  }
+  .live-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--ax-verified);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.85); }
+  }
+
+  .sig-verify-box {
+    background: #F0FDF4; border: 1px solid #BBF7D0;
+    border-radius: 10px; padding: 14px 16px;
+    margin-top: 16px;
+  }
+  .sig-verify-box h4 { font-size: 13px; font-weight: 600; color: #065F46; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .sig-check-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .sig-check-row:last-child { margin-bottom: 0; }
+  .sig-check-icon { color: var(--ax-verified); font-size: 14px; }
+  .sig-check-text { font-size: 12px; color: #047857; }
+
+  .action-row {
+    display: flex; gap: 10px; margin-top: 24px; flex-wrap: wrap;
+  }
+
+  /* ─── SCREEN 5: Revoked ─── */
+  .revoked-card {
+    background: white;
+    border: 1px solid #FECACA;
+    border-radius: 16px;
+    padding: 40px;
+    width: 100%; max-width: 580px;
+    box-shadow: 0 1px 3px rgba(220,38,38,0.08), 0 8px 32px rgba(220,38,38,0.06);
+    position: relative;
+    overflow: hidden;
+  }
+  .revoked-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, #DC2626, #F87171, #DC2626);
+  }
+  .revoked-banner {
+    background: var(--ax-revoked-bg);
+    border: 1px solid #FECACA;
+    border-radius: 12px;
+    padding: 20px 24px;
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 28px;
+  }
+  .revoked-banner .big-x {
+    width: 52px; height: 52px;
+    background: var(--ax-revoked);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px; color: white; flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(220,38,38,0.25);
+  }
+  .revoked-banner-text h2 { font-size: 20px; font-weight: 700; color: #991B1B; margin-bottom: 4px; }
+  .revoked-banner-text p { font-size: 13px; color: var(--ax-revoked); }
+
+  .revoked-details {
+    border: 1px solid #FECACA; border-radius: 10px; overflow: hidden; margin-bottom: 20px;
+  }
+  .revoked-detail-header {
+    background: var(--ax-revoked-bg); padding: 12px 16px;
+    font-size: 12px; font-weight: 600; color: #991B1B;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    border-bottom: 1px solid #FECACA;
+  }
+  .revoked-detail-body { padding: 0 16px; }
+
+  .warning-box {
+    background: #FFFBEB; border: 1px solid #FDE68A;
+    border-radius: 10px; padding: 14px 16px; margin-top: 16px;
+    display: flex; gap: 10px;
+  }
+  .warning-box .warn-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+  .warning-box h4 { font-size: 13px; font-weight: 600; color: #92400E; margin-bottom: 4px; }
+  .warning-box p { font-size: 12px; color: #B45309; line-height: 1.5; }
+
+  .verify-again-btn {
+    display: flex; align-items: center; gap: 8px;
+    background: white; border: 2px solid var(--ax-blue);
+    color: var(--ax-blue); padding: 10px 20px;
+    border-radius: 8px; font-size: 14px; font-weight: 600;
+    font-family: 'Inter', sans-serif; cursor: pointer;
+    transition: all 150ms ease;
+    width: 100%; justify-content: center; margin-top: 20px;
+  }
+  .verify-again-btn:hover { background: var(--ax-sky); }
+
+  /* Footer */
+  .portal-footer {
+    background: var(--ax-navy);
+    color: rgba(255,255,255,0.5);
+    padding: 24px 32px;
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 12px; flex-wrap: wrap; gap: 12px;
+  }
+  .portal-footer a { color: rgba(255,255,255,0.5); text-decoration: none; }
+  .portal-footer a:hover { color: white; }
+  .portal-footer .footer-links { display: flex; gap: 20px; }
+
+  /* Divider */
+  .divider {
+    display: flex; align-items: center; gap: 12px; margin: 20px 0;
+  }
+  .divider::before, .divider::after {
+    content: ''; flex: 1; height: 1px; background: var(--ax-gray-200);
+  }
+  .divider span { font-size: 12px; color: var(--ax-gray-400); font-weight: 500; }
+</style>
+</head>
+<body>
+
+<!-- Navigation Pills -->
+<div class="nav-pills">
+  <button onclick="showScreen(1)" id="pill-1" class="active">1 · Landing</button>
+  <button onclick="showScreen(2)" id="pill-2">2 · Paste Code</button>
+  <button onclick="showScreen(3)" id="pill-3">3 · Decoding</button>
+  <button onclick="showScreen(4)" id="pill-4">4 · ✓ Verified</button>
+  <button onclick="showScreen(5)" id="pill-5">5 · ✗ Revoked</button>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SCREEN 1: Landing / Login                            -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="screen active" id="screen-1">
+  <!-- Topbar -->
+  <div class="topbar-emp">
+    <div class="logo">
+      <div class="logo-mark">AX</div>
+      <div>
+        <div>AuthenX</div>
+        <div class="tagline">Verified. Always.</div>
+      </div>
+    </div>
+    <nav class="emp-nav">
+      <a href="#" class="active-link">Verify Credentials</a>
+      <a href="#">How It Works</a>
+      <a href="#">API Access</a>
+    </nav>
+    <div style="display:flex;gap:10px;">
+      <button class="btn-secondary" style="padding:7px 16px;">Log In</button>
+      <button class="btn-primary" style="padding:7px 16px;" onclick="showScreen(2)">Start Verifying →</button>
+    </div>
+  </div>
+
+  <!-- Hero -->
+  <div class="landing-hero">
+    <div class="hero-shield">🛡️</div>
+    <h1>Verify Degrees in<br><span>Seconds, Not Weeks</span></h1>
+    <p>AuthenX connects directly to college ERPs. Get live, cryptographically signed confirmation that a candidate's degree is real — before you hire.</p>
+    <div class="hero-cta">
+      <button class="hero-btn-primary" onclick="showScreen(2)">Verify a Credential Now →</button>
+      <button class="hero-btn-outline">Watch Demo</button>
+    </div>
+    <div class="trust-bar">
+      <div class="trust-item"><div class="dot"></div> Zero documents stored</div>
+      <div class="trust-item"><div class="dot"></div> Ed25519 signed by college</div>
+      <div class="trust-item"><div class="dot"></div> Live ERP cross-check</div>
+      <div class="trust-item"><div class="dot"></div> Instant revocation detection</div>
+    </div>
+  </div>
+
+  <!-- Features -->
+  <div class="features-section">
+    <div class="feature-card">
+      <div class="feature-icon" style="background:#EFF6FF;">⚡</div>
+      <h3>Instant Results</h3>
+      <p>Paste the candidate's AuthenX code. Results appear in under 3 seconds — live from the college ERP.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background:#ECFDF5;">🔐</div>
+      <h3>Cryptographic Proof</h3>
+      <p>Every verification is signed with Ed25519. No forgery possible — each check creates a fresh signature.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background:#FFFBEB;">🔄</div>
+      <h3>Revocation Aware</h3>
+      <p>If a college revokes a credential after issuance, you'll see it instantly. No stale certificates.</p>
+    </div>
+  </div>
+
+  <!-- Divider + Login Section -->
+  <div class="login-section">
+    <div class="divider"><span>Employer Login</span></div>
+    <h2>Sign in to your account</h2>
+    <p class="login-sub">Track your verification history and access batch tools</p>
+
+    <div class="card" style="border-radius:12px;">
+      <div class="form-group">
+        <label>Company Email</label>
+        <input type="email" placeholder="hr@company.com" value="hr@globaltech.com">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" placeholder="Enter password" value="••••••••••">
+      </div>
+      <button class="btn-primary" style="width:100%;padding:12px;" onclick="showScreen(2)">Sign In →</button>
+      <p style="text-align:center;font-size:13px;color:var(--ax-gray-400);margin-top:14px;">
+        Don't have an account? <a href="#" style="color:var(--ax-blue);font-weight:500;">Contact us</a>
+      </p>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="portal-footer">
+    <div>© 2025 AuthenX Technologies. Privacy-first credential infrastructure.</div>
+    <div class="footer-links">
+      <a href="#">Privacy Policy</a>
+      <a href="#">Terms of Service</a>
+      <a href="#">API Docs</a>
+      <a href="#">Support</a>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SCREEN 2: Paste Code (Step 1)                        -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-2">
+  <div class="topbar-emp">
+    <div class="logo">
+      <div class="logo-mark">AX</div>
+      <div>
+        <div>AuthenX</div>
+        <div class="tagline">Verified. Always.</div>
+      </div>
+    </div>
+    <nav class="emp-nav">
+      <a href="#" class="active-link">Verify Credentials</a>
+      <a href="#">History</a>
+      <a href="#">API</a>
+    </nav>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--ax-gradient-hero);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:13px;">G</div>
+      <span style="font-size:14px;font-weight:500;color:var(--ax-gray-700);">GlobalTech HR</span>
+    </div>
+  </div>
+
+  <div class="verify-main">
+    <!-- Stepper -->
+    <div class="stepper">
+      <div class="step active">
+        <div class="step-circle">1</div>
+        <div class="step-label">Paste Code</div>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step">
+        <div class="step-circle">2</div>
+        <div class="step-label">Decoding</div>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step">
+        <div class="step-circle">3</div>
+        <div class="step-label">Live Result</div>
+      </div>
+    </div>
+
+    <div class="paste-card">
+      <div class="card-icon">📋</div>
+      <h2>Paste Candidate's AuthenX Code</h2>
+      <p>Ask the candidate to share their AuthenX verification code. It starts with <code style="font-family:monospace;background:var(--ax-sky);padding:2px 6px;border-radius:4px;font-size:12px;">AX1.</code> and was issued by their college's verified system.</p>
+
+      <textarea class="code-textarea" id="code-input" rows="4" placeholder="AX1.eyJub25jZSI6..."></textarea>
+
+      <div class="code-hint">
+        💡 Codes are single-use per verification session. Ask the candidate to share a fresh code.
+      </div>
+
+      <div class="sample-code" onclick="fillSampleCode()">
+        <div class="code-label">Click to use sample test code</div>
+        AX1.eyJzdHVkZW50X3JlZiI6InN0dV9yZWZfMDAxIiwiY29sbGVnZV9pZCI6ImlpdGIiLCJub25jZSI6ImE0ZjJiOGM1ZDlmMSIsInRpbWVzdGFtcCI6MTcwOTI5MTIwMH0
+      </div>
+
+      <div style="display:flex;gap:10px;">
+        <button class="btn-primary" style="flex:1;padding:12px;" onclick="showScreen(3)">
+          Verify Credential →
+        </button>
+        <button class="btn-secondary" onclick="document.getElementById('code-input').value=''">
+          Clear
+        </button>
+      </div>
+
+      <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--ax-gray-100);">
+        <p style="font-size:12px;color:var(--ax-gray-400);text-align:center;">
+          🔒 AuthenX never stores the credential data it fetches. Only a verification event log is kept.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="portal-footer">
+    <div>© 2025 AuthenX Technologies</div>
+    <div class="footer-links">
+      <a href="#">Privacy</a>
+      <a href="#">Terms</a>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SCREEN 3: Code Decoded — Registry Check (Step 2)     -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-3">
+  <div class="topbar-emp">
+    <div class="logo">
+      <div class="logo-mark">AX</div>
+      <div>
+        <div>AuthenX</div>
+        <div class="tagline">Verified. Always.</div>
+      </div>
+    </div>
+    <nav class="emp-nav">
+      <a href="#" class="active-link">Verify Credentials</a>
+      <a href="#">History</a>
+      <a href="#">API</a>
+    </nav>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--ax-gradient-hero);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:13px;">G</div>
+      <span style="font-size:14px;font-weight:500;color:var(--ax-gray-700);">GlobalTech HR</span>
+    </div>
+  </div>
+
+  <div class="verify-main">
+    <!-- Stepper -->
+    <div class="stepper">
+      <div class="step done">
+        <div class="step-circle">✓</div>
+        <div class="step-label">Paste Code</div>
+      </div>
+      <div class="step-connector done"></div>
+      <div class="step active">
+        <div class="step-circle">2</div>
+        <div class="step-label">Decoding</div>
+      </div>
+      <div class="step-connector"></div>
+      <div class="step">
+        <div class="step-circle">3</div>
+        <div class="step-label">Live Result</div>
+      </div>
+    </div>
+
+    <div class="decoded-card">
+      <div class="decoded-header">
+        <div>
+          <h2>Code Decoded</h2>
+          <p>AuthenX registry check complete — proceeding to live ERP verification</p>
+        </div>
+        <span class="badge-active">● Processing</span>
+      </div>
+
+      <!-- Decoded Fields -->
+      <div class="info-row">
+        <span class="info-label">College</span>
+        <span class="info-value">IIT Bombay</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Student Reference</span>
+        <span class="info-value" style="font-family:monospace;font-size:13px;">stu_ref_001</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Credential Type</span>
+        <span class="info-value">B.Tech — Computer Science</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Issue Date</span>
+        <span class="info-value">June 15, 2024</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Token Status</span>
+        <span class="info-value"><span class="badge-active">● Active</span></span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">Revocation</span>
+        <span class="info-value" style="color:var(--ax-verified);font-weight:600;">Not revoked</span>
+      </div>
+
+      <!-- Registry check status -->
+      <div class="registry-check">
+        <div class="registry-check-icon">🔍</div>
+        <div class="registry-check-text">
+          <h4>Registry Check Passed</h4>
+          <p>Token found in AuthenX registry · Connecting to IIT Bombay ERP for live confirmation…</p>
+        </div>
+      </div>
+
+      <!-- Hash preview -->
+      <div class="hash-display">
+        <div class="hash-label">Stored Credential Hash (SHA-256)</div>
+        a3f8c2e1d94b5067f28e13c4b9a07d3f1e5c82b4d0f91a6e23b7d54c8f0e2a1
+      </div>
+
+      <div style="margin-top:24px;display:flex;gap:10px;">
+        <button class="btn-primary" style="flex:1;padding:12px;" onclick="showScreen(4)">
+          Confirm Live Verification →
+        </button>
+        <button class="btn-secondary" onclick="showScreen(5)">
+          Test Revoked ✗
+        </button>
+      </div>
+
+      <p style="font-size:12px;color:var(--ax-gray-400);text-align:center;margin-top:14px;">
+        Connecting to IIT Bombay's secure connector to fetch live data…
+      </p>
+    </div>
+  </div>
+
+  <div class="portal-footer">
+    <div>© 2025 AuthenX Technologies</div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SCREEN 4: Live Verified ✓                            -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-4">
+  <div class="topbar-emp">
+    <div class="logo">
+      <div class="logo-mark">AX</div>
+      <div>
+        <div>AuthenX</div>
+        <div class="tagline">Verified. Always.</div>
+      </div>
+    </div>
+    <nav class="emp-nav">
+      <a href="#" class="active-link">Verify Credentials</a>
+      <a href="#">History</a>
+      <a href="#">API</a>
+    </nav>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--ax-gradient-hero);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:13px;">G</div>
+      <span style="font-size:14px;font-weight:500;color:var(--ax-gray-700);">GlobalTech HR</span>
+    </div>
+  </div>
+
+  <div class="verify-main">
+    <!-- Stepper -->
+    <div class="stepper">
+      <div class="step done">
+        <div class="step-circle">✓</div>
+        <div class="step-label">Paste Code</div>
+      </div>
+      <div class="step-connector done"></div>
+      <div class="step done">
+        <div class="step-circle">✓</div>
+        <div class="step-label">Decoding</div>
+      </div>
+      <div class="step-connector done"></div>
+      <div class="step done">
+        <div class="step-circle">✓</div>
+        <div class="step-label">Live Result</div>
+      </div>
+    </div>
+
+    <div class="verified-card">
+      <!-- Verified Banner -->
+      <div class="verified-banner">
+        <div class="big-check">✓</div>
+        <div class="verified-banner-text">
+          <h2>Credential Verified</h2>
+          <p>Live confirmed directly from IIT Bombay ERP · Ed25519 signature valid</p>
+        </div>
+      </div>
+
+      <!-- Live badge + timestamp -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+        <div class="live-badge">
+          <div class="live-dot"></div>
+          LIVE DATA FROM COLLEGE ERP
+        </div>
+        <span style="font-size:12px;color:var(--ax-gray-400);">Verified at 2:34 PM IST</span>
+      </div>
+
+      <!-- Student Profile -->
+      <div class="student-profile-card">
+        <div class="student-profile-header">
+          <div class="student-avatar">SK</div>
+          <div>
+            <h3>SUPREETH K</h3>
+            <p>IIT Bombay — Enrollment: 2020CS001</p>
+          </div>
+        </div>
+        <div class="student-profile-body">
+          <div class="info-row">
+            <span class="info-label">Degree</span>
+            <span class="info-value" style="font-weight:600;">B.Tech — Computer Science</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">CGPA</span>
+            <span class="info-value">8.9 / 10.0</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Graduation Year</span>
+            <span class="info-value">2024</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Current Status</span>
+            <span class="info-value"><span class="badge-verified">● Active / Alumni</span></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">College</span>
+            <span class="info-value">IIT Bombay (NAAC A++)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Signature Verification Box -->
+      <div class="sig-verify-box">
+        <h4>🔐 Cryptographic Verification</h4>
+        <div class="sig-check-row">
+          <span class="sig-check-icon">✓</span>
+          <span class="sig-check-text">Hash match: Live data matches stored credential fingerprint</span>
+        </div>
+        <div class="sig-check-row">
+          <span class="sig-check-icon">✓</span>
+          <span class="sig-check-text">Issuance signature: Valid Ed25519 from IIT Bombay (issued Jun 2024)</span>
+        </div>
+        <div class="sig-check-row">
+          <span class="sig-check-icon">✓</span>
+          <span class="sig-check-text">Live signature: Fresh Ed25519 signed 2 seconds ago</span>
+        </div>
+        <div class="sig-check-row">
+          <span class="sig-check-icon">✓</span>
+          <span class="sig-check-text">Revocation status: Not revoked — credential is fully active</span>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="action-row">
+        <button class="btn-primary">⬇ Download Report</button>
+        <button class="btn-secondary">📋 Copy Summary</button>
+        <button class="btn-ghost" onclick="showScreen(2)">Verify Another</button>
+      </div>
+
+      <!-- Privacy Note -->
+      <div style="margin-top:20px;padding:12px 14px;background:var(--ax-sky);border-radius:8px;font-size:12px;color:#1E40AF;line-height:1.5;">
+        🔒 <strong>Privacy Note:</strong> AuthenX did not store this student's personal data. Only a verification event log was created. The live data shown above was fetched, verified, and will be discarded.
+      </div>
+    </div>
+  </div>
+
+  <div class="portal-footer">
+    <div>© 2025 AuthenX Technologies</div>
+    <div class="footer-links">
+      <a href="#">Privacy</a>
+      <a href="#">Terms</a>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════ -->
+<!-- SCREEN 5: Revoked Result ✗                           -->
+<!-- ══════════════════════════════════════════════════════ -->
+<div class="screen" id="screen-5">
+  <div class="topbar-emp">
+    <div class="logo">
+      <div class="logo-mark">AX</div>
+      <div>
+        <div>AuthenX</div>
+        <div class="tagline">Verified. Always.</div>
+      </div>
+    </div>
+    <nav class="emp-nav">
+      <a href="#" class="active-link">Verify Credentials</a>
+      <a href="#">History</a>
+      <a href="#">API</a>
+    </nav>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--ax-gradient-hero);display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:13px;">G</div>
+      <span style="font-size:14px;font-weight:500;color:var(--ax-gray-700);">GlobalTech HR</span>
+    </div>
+  </div>
+
+  <div class="verify-main">
+    <!-- Stepper — all complete but result is revoked -->
+    <div class="stepper">
+      <div class="step done">
+        <div class="step-circle">✓</div>
+        <div class="step-label">Paste Code</div>
+      </div>
+      <div class="step-connector done"></div>
+      <div class="step done">
+        <div class="step-circle">✓</div>
+        <div class="step-label">Decoding</div>
+      </div>
+      <div class="step-connector done"></div>
+      <div class="step" style="--step-color: var(--ax-revoked);">
+        <div class="step-circle" style="background:var(--ax-revoked);border-color:var(--ax-revoked);color:white;">✗</div>
+        <div class="step-label" style="color:var(--ax-revoked);">Revoked</div>
+      </div>
+    </div>
+
+    <div class="revoked-card">
+      <!-- Revoked Banner -->
+      <div class="revoked-banner">
+        <div class="big-x">✗</div>
+        <div class="revoked-banner-text">
+          <h2>Credential Revoked</h2>
+          <p>This credential has been revoked by NIT Calicut — do not accept</p>
+        </div>
+      </div>
+
+      <!-- Revoked Credential Details -->
+      <div class="revoked-details">
+        <div class="revoked-detail-header">Revoked Credential Details</div>
+        <div class="revoked-detail-body">
+          <div class="info-row">
+            <span class="info-label">Student Ref</span>
+            <span class="info-value" style="font-family:monospace;font-size:13px;">stu_ref_003</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">College</span>
+            <span class="info-value">NIT Calicut</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Credential Type</span>
+            <span class="info-value">B.Tech — Electronics & Communication</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Originally Issued</span>
+            <span class="info-value">March 10, 2024</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Revoked On</span>
+            <span class="info-value" style="color:var(--ax-revoked);font-weight:600;">August 22, 2024</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Revocation Reason</span>
+            <span class="info-value" style="color:var(--ax-revoked);font-weight:600;">Academic misconduct</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Revoked By</span>
+            <span class="info-value">NIT Calicut Registrar Office</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Warning Box -->
+      <div class="warning-box">
+        <div class="warn-icon">⚠️</div>
+        <div>
+          <h4>Do Not Accept This Credential</h4>
+          <p>The issuing institution has formally revoked this degree. The student's enrollment status is now marked as <strong>Withdrawn</strong> in the college ERP. This is a live, real-time status — not a cached result.</p>
+        </div>
+      </div>
+
+      <!-- Sig verification (partial fail) -->
+      <div style="background:#FEF2F2;border:1px solid #FECACA;border-radius:10px;padding:14px 16px;margin-top:16px;">
+        <h4 style="font-size:13px;font-weight:600;color:#991B1B;margin-bottom:10px;display:flex;align-items:center;gap:6px;">🔐 Verification Details</h4>
+        <div class="sig-check-row">
+          <span style="color:var(--ax-verified);font-size:14px;">✓</span>
+          <span style="font-size:12px;color:#047857;">Code decrypted: AuthenX code is valid and intact</span>
+        </div>
+        <div class="sig-check-row">
+          <span style="color:var(--ax-verified);font-size:14px;">✓</span>
+          <span style="font-size:12px;color:#047857;">Token found: Exists in AuthenX registry</span>
+        </div>
+        <div class="sig-check-row">
+          <span style="color:var(--ax-revoked);font-size:14px;">✗</span>
+          <span style="font-size:12px;color:#991B1B;">Revocation check failed: Token marked revoked on Aug 22, 2024</span>
+        </div>
+        <div class="sig-check-row">
+          <span style="color:var(--ax-revoked);font-size:14px;">✗</span>
+          <span style="font-size:12px;color:#991B1B;">ERP status: Student record shows WITHDRAWN — degree not valid</span>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <button class="verify-again-btn" onclick="showScreen(2)">
+        ← Verify a Different Credential
+      </button>
+
+      <p style="font-size:12px;color:var(--ax-gray-400);text-align:center;margin-top:14px;">
+        This verification event has been logged with a timestamp. AuthenX did not store any personal data.
+      </p>
+    </div>
+  </div>
+
+  <div class="portal-footer">
+    <div>© 2025 AuthenX Technologies</div>
+    <div class="footer-links">
+      <a href="#">Privacy</a>
+      <a href="#">Terms</a>
+    </div>
+  </div>
+</div>
+
+
+<script>
+  function showScreen(n) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.nav-pills button').forEach(b => b.classList.remove('active'));
+    document.getElementById('screen-' + n).classList.add('active');
+    document.getElementById('pill-' + n).classList.add('active');
+    window.scrollTo(0, 0);
+  }
+
+  function fillSampleCode() {
+    const input = document.getElementById('code-input');
+    if (input) {
+      input.value = 'AX1.eyJzdHVkZW50X3JlZiI6InN0dV9yZWZfMDAxIiwiY29sbGVnZV9pZCI6ImlpdGIiLCJub25jZSI6ImE0ZjJiOGM1ZDlmMSIsInRpbWVzdGFtcCI6MTcwOTI5MTIwMH0';
+    }
+  }
+</script>
+</body>
+</html>
