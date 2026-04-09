@@ -121,7 +121,7 @@
 
 <script src="/college/app.js"></script>
 <script>
-if (!Auth.requireAuth()) {}
+if (!Flow.guard('codeIssued')) {}
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('issue');
 initNav('issue');
 
@@ -175,11 +175,12 @@ function copyCode() {
 
 function shareViaEmail() {
   const subject = encodeURIComponent(`Your AuthenX Credential Code — ${name || ref}`);
+  const verifyUrl = `${window.location.origin}/employer/index.html`;
   const body = encodeURIComponent(
     `Dear ${name || ref},\n\nYour academic credential has been verified and issued by AuthenX.\n\n` +
     `Your AuthenX Code:\n${code}\n\n` +
     `Share this code with employers when they request credential verification.\n` +
-    `The code can be verified at: http://localhost:3001\n\n` +
+    `The code can be verified at: ${verifyUrl}\n\n` +
     `— AuthenX Verification System`
   );
   window.location.href = `mailto:?subject=${subject}&body=${body}`;

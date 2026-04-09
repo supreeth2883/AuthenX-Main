@@ -243,7 +243,7 @@ node connector.js</div>
 
 <script src="/college/app.js"></script>
 <script>
-if (!Auth.requireAuth()) {}
+if (!Flow.guard('onboarding')) {}
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('onboarding');
 initNav('onboarding');
 
@@ -252,6 +252,44 @@ let currentStep = 1;
 let selectedDb = 'sqlite';
 
 const CANONICAL_FIELDS = ['name', 'degree', 'branch', 'cgpa', 'graduation_year', 'issue_date', 'credential_type'];
+
+function collectConnectorConfig() {
+  const cfg = { db_type: selectedDb, connection: {}, created_from_ui: true };
+  if (selectedDb === 'sqlite') {
+    cfg.connection.sqlite_path = document.getElementById('c-sqlite')?.value || '';
+    cfg.connection.table = document.getElementById('c-table')?.value || '';
+  } else if (selectedDb === 'rest') {
+    cfg.connection.api_base_url = document.getElementById('c-url')?.value || '';
+    cfg.connection.auth_header = document.getElementById('c-header')?.value || '';
+  } else {
+    cfg.connection.host = document.getElementById('c-host')?.value || '';
+    cfg.connection.port = document.getElementById('c-port')?.value || '';
+    cfg.connection.database = document.getElementById('c-db')?.value || '';
+    cfg.connection.username = document.getElementById('c-user')?.value || '';
+    cfg.connection.table = document.getElementById('c-table')?.value || '';
+  }
+  return cfg;
+}
+
+function collectFieldMapping() {
+  const mapping = {};
+  for (const f of CANONICAL_FIELDS) {
+    const val = document.getElementById(`fm-${f}`)?.value || '';
+    if (!val || val === '__custom') continue;
+    mapping[f] = val;
+  }
+  return mapping;
+}
+
+async function persistProgress(extra = {}) {
+  await API.put('/connector-config', {
+    erp_type: selectedDb,
+    connector_url: document.getElementById('c-connector-url')?.value?.trim() || undefined,
+    connector_config: collectConnectorConfig(),
+    field_mapping: collectFieldMapping(),
+    ...extra,
+  });
+}
 
 function renderStepIndicator() {
   const cont = document.getElementById('step-indicator');
@@ -304,8 +342,17 @@ function selectDb(db, el) {
 
 function renderConnFields() {
   const cont = document.getElementById('conn-fields');
+  const connectorUrlPrefill =
+    (document.getElementById('c-connector-url')?.value) ||
+    (localStorage.getItem('ax_connector_url') || '');
+
   if (selectedDb === 'sqlite') {
     cont.innerHTML = `
+      <div class="form-group">
+        <label>Connector Base URL</label>
+        <input type="text" id="c-connector-url" placeholder="http://localhost:9001" value="${connectorUrlPrefill}" style="font-family:monospace">
+        <div style="margin-top:6px;font-size:11px;color:var(--ax-subtle)">Where your college connector is reachable from the AuthenX server</div>
+      </div>
       <div class="form-group">
         <label>SQLite File Path</label>
         <input type="text" id="c-sqlite" placeholder="/data/students.db" style="font-family:monospace">
@@ -318,6 +365,11 @@ function renderConnFields() {
   } else if (selectedDb === 'rest') {
     cont.innerHTML = `
       <div class="form-group">
+        <label>Connector Base URL</label>
+        <input type="text" id="c-connector-url" placeholder="http://localhost:9001" value="${connectorUrlPrefill}" style="font-family:monospace">
+        <div style="margin-top:6px;font-size:11px;color:var(--ax-subtle)">Where your college connector is reachable from the AuthenX server</div>
+      </div>
+      <div class="form-group">
         <label>API Base URL</label>
         <input type="text" id="c-url" placeholder="https://erp.college.ac.in/api/v1" style="font-family:monospace">
       </div>
@@ -327,6 +379,11 @@ function renderConnFields() {
       </div>`;
   } else {
     cont.innerHTML = `
+      <div class="form-group">
+        <label>Connector Base URL</label>
+        <input type="text" id="c-connector-url" placeholder="http://localhost:9001" value="${connectorUrlPrefill}" style="font-family:monospace">
+        <div style="margin-top:6px;font-size:11px;color:var(--ax-subtle)">Where your college connector is reachable from the AuthenX server</div>
+      </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
         <div class="form-group"><label>Host</label><input type="text" id="c-host" placeholder="db.college.ac.in"></div>
         <div class="form-group"><label>Port</label><input type="number" id="c-port" placeholder="${selectedDb === 'postgres' ? '5432' : selectedDb === 'mssql' ? '1433' : selectedDb === 'oracle' ? '1521' : '3306'}"></div>
@@ -372,15 +429,14 @@ async function testConnection() {
   resultEl.style.display = 'none';
 
   try {
-    const start = Date.now();
-    const res = await fetch(Auth.getConnectorUrl('/health'), { signal: AbortSignal.timeout(4000) });
-    const latency = Date.now() - start;
-    if (res.ok) {
+    const data = await API.get('/connector/health');
+    if (data && (data.status === 'ok' || data.status === 'mock' || data.college_id)) {
       resultEl.className = 'health-result health-ok';
-      resultEl.innerHTML = `✓ Connector online · Latency: <strong>${latency}ms</strong> · ERP connection verified`;
+      resultEl.innerHTML = `✓ Connector reachable · Mode: <strong>${data.status === 'mock' ? 'Mock' : 'Live'}</strong>`;
       resultEl.style.display = '';
+      await persistProgress();
     } else {
-      throw new Error(`HTTP ${res.status}`);
+      throw new Error('Unexpected connector health response');
     }
   } catch (err) {
     resultEl.className = 'health-result health-fail';
@@ -426,12 +482,26 @@ function rotateKeyFromWizard() {
 }
 
 function completeSetup() {
-  toast('Setup complete! Connector is configured and ready.', 'success');
-  setTimeout(() => window.location.href = '/college/connector-management.html', 1500);
+  (async () => {
+    try {
+      await persistProgress({ onboarding_completed: 1 });
+      localStorage.setItem('ax_onboarded', '1');
+      toast('Setup complete! Connector config saved to backend + DB.', 'success');
+      setTimeout(() => window.location.href = '/college/connector-management.html', 1200);
+    } catch (e) {
+      toast('Could not save setup: ' + e.message, 'error', 6000);
+    }
+  })();
 }
 
 // Init
 renderStepIndicator();
+
+// Load persisted onboarding state (backend → UI)
+(async () => {
+  const cfg = await Flow.syncOnboarding();
+  if (cfg?.erp_type) selectedDb = cfg.erp_type;
+})();
 </script>
 </body>
 </html>

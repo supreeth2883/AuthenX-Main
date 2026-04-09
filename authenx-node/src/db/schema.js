@@ -57,6 +57,16 @@ const SQL_SCHEMA = `
     UNIQUE(college_id, field_name)
   );
 
+  CREATE TABLE IF NOT EXISTS college_connector_configs (
+    college_id  TEXT PRIMARY KEY REFERENCES colleges(id),
+    onboarding_completed INTEGER NOT NULL DEFAULT 0,
+    erp_type     TEXT,
+    connector_url TEXT,
+    connector_config_json TEXT,
+    field_mapping_json    TEXT,
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE TABLE IF NOT EXISTS verification_requests (
     id              TEXT PRIMARY KEY,
     token_id        TEXT NOT NULL REFERENCES verification_tokens(id),
@@ -147,6 +157,7 @@ const SQL_SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_tokens_student   ON verification_tokens(student_ref_token);
   CREATE INDEX IF NOT EXISTS idx_tokens_status    ON verification_tokens(status);
   CREATE INDEX IF NOT EXISTS idx_disclosure_college ON disclosure_policies(college_id);
+  CREATE INDEX IF NOT EXISTS idx_connectorcfg_updated ON college_connector_configs(updated_at);
   CREATE INDEX IF NOT EXISTS idx_requests_token   ON verification_requests(token_id);
   CREATE INDEX IF NOT EXISTS idx_requests_created ON verification_requests(created_at);
   CREATE INDEX IF NOT EXISTS idx_login_email      ON login_attempts(email);

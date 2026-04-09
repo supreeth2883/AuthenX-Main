@@ -168,7 +168,7 @@
 
 <script src="/college/app.js"></script>
 <script>
-if (!Auth.requireAuth()) {}
+if (!Flow.guard('issue')) {}
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('issue');
 initNav('issue');
 
@@ -280,13 +280,8 @@ async function fetchFromERP() {
   btn.innerHTML = '<div class="spinner"></div> Fetching from ERP…';
 
   try {
-    const res = await fetch(Auth.getConnectorUrl('/verify'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ student_ref_token: ref, nonce: 'preview_' + Date.now() })
-    });
-    const data = await res.json();
-    fetchedData = res.ok ? data : buildMockData(ref);
+    const data = await API.post('/connector/verify', { student_ref_token: ref, nonce: 'preview_' + Date.now() });
+    fetchedData = data || buildMockData(ref);
   } catch {
     fetchedData = buildMockData(ref);
   }
@@ -339,12 +334,11 @@ async function issueCredential() {
 
     let studentData = fetchedData;
     try {
-      const connRes = await fetch(Auth.getConnectorUrl('/verify'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ student_ref_token: fetchedData.student_ref_token, nonce: 'issue_' + Date.now() })
+      const data = await API.post('/connector/verify', {
+        student_ref_token: fetchedData.student_ref_token,
+        nonce: 'issue_' + Date.now()
       });
-      if (connRes.ok) studentData = await connRes.json();
+      if (data) studentData = data;
     } catch {}
 
     const issueResp = await API.post('/tokens/issue-demo', {

@@ -181,7 +181,7 @@
 
 <script src="/college/app.js"></script>
 <script>
-if (!Auth.requireAuth()) {}
+if (!Flow.guard('security')) {}
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('security');
 initNav('security');
 
@@ -247,8 +247,8 @@ async function loadKeyHistory() {
 
 async function checkConnector() {
   try {
-    const res = await fetch(Auth.getConnectorUrl('/health'), { signal: AbortSignal.timeout(3000) });
-    if (res.ok) {
+    const data = await API.get('/connector/health');
+    if (data && (data.status === 'ok' || data.college_id)) {
       document.getElementById('check-connector').querySelector('.check-icon').className = 'check-icon check-pass';
       document.getElementById('check-connector').querySelector('.check-icon').textContent = '✓';
       document.getElementById('check-connector-text').textContent = 'Connector online — live ERP data available at verification time.';

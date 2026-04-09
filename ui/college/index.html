@@ -154,7 +154,7 @@ input::placeholder { color: #64748b; }
   </button>
 
   <div class="footer-links">
-    <p>Employer? <a href="/employer/index.html">Go to Verify Portal →</a></p>
+    <p>Employer? <a href="../employer/index.html">Go to Verify Portal →</a></p>
   </div>
 </div>
 
@@ -174,7 +174,10 @@ document.getElementById('password').addEventListener('keydown', e => {
   if (t) {
     try {
       const c = JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
-      if (c.exp > Date.now()/1000) window.location.href = '/college/dashboard.html';
+      if (c.exp > Date.now()/1000) {
+        const onboarded = localStorage.getItem('ax_onboarded') === '1';
+        window.location.href = onboarded ? 'dashboard.html' : 'onboarding.html';
+      }
     } catch {}
   }
 })();
@@ -205,9 +208,25 @@ async function doLogin() {
     if (!res.ok) throw new Error(data.error || 'Login failed');
 
     localStorage.setItem('ax_token', data.token);
-    localStorage.setItem('ax_user', JSON.stringify({ email: data.email, role: data.role }));
+    localStorage.setItem('ax_user', JSON.stringify(data.user || {}));
+    localStorage.setItem('ax_onboarded', '0');
 
-    window.location.href = '/college/dashboard.html';
+    // Check backend: if onboarding is already complete, go straight to dashboard.
+    try {
+      const cfgRes = await fetch('http://localhost:3000/v1/connector-config', {
+        headers: { 'Authorization': `Bearer ${data.token}`, 'Content-Type': 'application/json' }
+      });
+      if (cfgRes.ok) {
+        const cfg = await cfgRes.json();
+        if (cfg.onboarding_completed) {
+          localStorage.setItem('ax_onboarded', '1');
+          window.location.href = 'dashboard.html';
+          return;
+        }
+      }
+    } catch {}
+
+    window.location.href = 'onboarding.html';
   } catch (err) {
     showError(err.message || 'Invalid credentials. Please try again.');
     btn.disabled = false;

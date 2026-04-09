@@ -79,7 +79,7 @@
 
   <script src="/college/app.js"></script>
   <script>
-    if (!Auth.requireAuth()) { }
+    if (!Flow.guard('students')) { }
     document.getElementById('sidebar-mount').innerHTML = renderSidebar('students');
     initNav('students');
 

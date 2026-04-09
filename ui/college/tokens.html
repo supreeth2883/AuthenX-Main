@@ -94,7 +94,7 @@
 
   <script src="/college/app.js"></script>
   <script>
-    if (!Auth.requireAuth()) { }
+    if (!Flow.guard('tokens')) { }
     document.getElementById('sidebar-mount').innerHTML = renderSidebar('tokens');
     initNav('tokens');
 

@@ -18,10 +18,11 @@
         <p>Control which credential fields are visible to employers at verification time</p>
       </div>
       <div class="topbar-actions">
-        <button class="btn btn-primary" onclick="savePolicy()">
+        <button class="btn btn-primary" onclick="saveAndContinue()">
           <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
-          Save Policy
+          Save &amp; Go to Dashboard
         </button>
+        <button class="btn btn-secondary" onclick="savePolicy()">Save</button>
       </div>
     </header>
 
@@ -117,7 +118,7 @@
 
 <script src="/college/app.js"></script>
 <script>
-if (!Auth.requireAuth()) {}
+if (!Flow.guard('disclosure')) {}
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('disclosure');
 initNav('disclosure');
 
@@ -239,7 +240,15 @@ async function savePolicy() {
     toast('Disclosure policy saved', 'success');
   } catch (err) {
     toast('Failed to save policy: ' + err.message, 'error');
+    throw err;
   }
+}
+
+async function saveAndContinue() {
+  try {
+    await savePolicy();
+    setTimeout(() => window.location.href = '/college/dashboard.html', 1000);
+  } catch {}
 }
 
 loadPolicy();

@@ -107,6 +107,15 @@
                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
                 Update Field Mapping
               </a>
+              <hr style="border:none;border-top:1px solid var(--ax-border);margin:4px 0">
+              <a href="/college/disclosure-policy.html" class="btn btn-primary" style="justify-content:center">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+                Continue → Disclosure Policy
+              </a>
+              <a href="/college/dashboard.html" class="btn btn-secondary" style="justify-content:center">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v5a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10-3a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1v-7z"/></svg>
+                Go to Dashboard
+              </a>
             </div>
           </div>
 
@@ -162,12 +171,12 @@
 
 <script src="/college/app.js"></script>
 <script>
-if (!Auth.requireAuth()) {}
+if (!Flow.guard('connector')) {}
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('connector');
 initNav('connector');
 
-const connectorUrl = Auth.getConnectorUrl('');
-document.getElementById('connector-url-display').textContent = connectorUrl || 'localhost:9001';
+let connectorUrl = localStorage.getItem('ax_connector_url') || '';
+document.getElementById('connector-url-display').textContent = connectorUrl || 'loading...';
 document.getElementById('adapter-url').textContent = (connectorUrl || 'http://localhost:9001').replace('http://','');
 
 let healthInterval;
@@ -181,16 +190,14 @@ async function checkHealth() {
   lastChecked.textContent = new Date().toLocaleTimeString('en-IN');
 
   try {
-    const start = Date.now();
-    const res = await fetch(Auth.getConnectorUrl('/health'), { signal: AbortSignal.timeout(3000) });
-    const latency = Date.now() - start;
-
-    if (res.ok) {
-      const data = await res.json().catch(() => ({}));
+    const data = await API.get('/connector/health');
+    if (data && (data.status === 'ok' || data.college_id || data.status === 'mock')) {
       banner.className = 'health-banner health-live';
       banner.querySelector('.health-icon').textContent = '✓';
       title.textContent = 'Connector Online — Live ERP';
-      sub.textContent = `Latency: ${latency}ms · DB: ${data.db_type || 'SQLite'} · Mode: Read-only`;
+      connectorUrl = data.connector_url || connectorUrl;
+      document.getElementById('connector-url-display').textContent = connectorUrl || '—';
+      document.getElementById('adapter-url').textContent = (connectorUrl || 'http://localhost:9001').replace('http://','');
       document.getElementById('adapter-db').textContent = data.db_type || 'SQLite';
       document.getElementById('adapter-mode').textContent = data.mode || 'Read-only';
       document.getElementById('connector-status').className = 'connector-status live';
@@ -275,11 +282,10 @@ async function runDiagnostics() {
 
   // Ping connector
   try {
-    const start = Date.now();
-    const res = await fetch(Auth.getConnectorUrl('/health'), { signal: AbortSignal.timeout(3000) });
-    const latency = Date.now() - start;
-    set('diag-ping', res.ok ? `✓ ${latency}ms` : '✕ Non-200', res.ok ? 'diag-ok' : 'diag-fail');
-    set('diag-db', res.ok ? '✓ Accessible' : '✕ Check connector', res.ok ? 'diag-ok' : 'diag-fail');
+    const data = await API.get('/connector/health');
+    const ok = data && (data.status === 'ok' || data.college_id);
+    set('diag-ping', ok ? `✓ ${data.latency_ms || 'OK'}` : '✕ Unreachable', ok ? 'diag-ok' : 'diag-fail');
+    set('diag-db', ok ? '✓ Accessible' : '✕ Check connector', ok ? 'diag-ok' : 'diag-fail');
   } catch {
     set('diag-ping', '✕ Timeout / unreachable', 'diag-fail');
     set('diag-db', '✕ Cannot reach connector', 'diag-fail');
@@ -329,14 +335,7 @@ function restartConnector() {
            <p style="margin-top:8px;font-size:13px;color:var(--ax-muted)">This will briefly interrupt verification service (&lt;30 seconds).</p>`,
     confirmText: 'Restart',
     confirmClass: 'btn-danger',
-    onConfirm: async () => {
-      try {
-        await fetch(Auth.getConnectorUrl('/restart'), { method: 'POST' });
-        toast('Restart signal sent to connector', 'success');
-      } catch {
-        toast('Could not reach connector to restart', 'error');
-      }
-    }
+    onConfirm: async () => toast('Restart is not supported by this connector build. Restart the connector process manually.', 'info', 6000)
   });
 }
 
@@ -347,7 +346,14 @@ function refreshAll() {
 }
 
 // Initial load + polling
-refreshAll();
+Flow.syncOnboarding().then(cfg => {
+  if (cfg?.college?.connector_url) {
+    connectorUrl = cfg.college.connector_url;
+    document.getElementById('connector-url-display').textContent = connectorUrl;
+    document.getElementById('adapter-url').textContent = (connectorUrl || 'http://localhost:9001').replace('http://','');
+  }
+  refreshAll();
+});
 healthInterval = setInterval(checkHealth, 10000);
 window.addEventListener('beforeunload', () => clearInterval(healthInterval));
 </script>

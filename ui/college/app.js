@@ -55,6 +55,8 @@ const API = {
   },
   get: (path) => API.call('GET', path),
   post: (path, body) => API.call('POST', path, body),
+  put: (path, body) => API.call('PUT', path, body),
+  del: (path, body) => API.call('DELETE', path, body),
 };
 
 // ─── Crypto helpers (for signing issuance requests) ──────────────────────────
@@ -138,8 +140,8 @@ async function checkConnectorStatus() {
   const statusEl = document.getElementById('connector-status');
   if (!statusEl) return;
   try {
-    const res = await fetch(Auth.getConnectorUrl('/health'));
-    if (res.ok) {
+    const data = await API.get('/connector/health');
+    if (data && (data.status === 'ok' || data.college_id)) {
       statusEl.className = 'connector-status live';
       statusEl.innerHTML = '<div class="pulse-dot"></div> Live ERP';
     } else throw new Error();
@@ -250,3 +252,110 @@ function renderSidebar(activeId) {
     </div>
   </aside>`;
 }
+
+// ─── Linear flow engine (wizard order + gating) ────────────────────────────────
+// Source of truth for which page comes after which.
+const Flow = (() => {
+  const ORDER = [
+    { id: 'index',      path: '/college/index.html' },
+    { id: 'onboarding', path: '/college/onboarding.html' },
+    { id: 'connector',  path: '/college/connector-management.html' },
+    { id: 'disclosure', path: '/college/disclosure-policy.html' },
+    { id: 'dashboard',  path: '/college/dashboard.html' },
+    { id: 'students',   path: '/college/students.html' },
+    { id: 'issue',      path: '/college/issue.html' },
+    { id: 'codeIssued', path: '/college/code-issued.html' },
+    { id: 'tokens',     path: '/college/tokens.html' },
+    { id: 'audit',      path: '/college/audit.html' },
+    { id: 'security',   path: '/college/security.html' },
+  ];
+
+  function indexById(id) {
+    return ORDER.findIndex(p => p.id === id);
+  }
+  function indexByPath(pathname) {
+    return ORDER.findIndex(p => p.path === pathname);
+  }
+  function getCurrent() {
+    const idx = indexByPath(window.location.pathname);
+    return idx >= 0 ? ORDER[idx] : null;
+  }
+  function getNext(idOrPathname = null) {
+    const idx = idOrPathname
+      ? (idOrPathname.startsWith('/') ? indexByPath(idOrPathname) : indexById(idOrPathname))
+      : indexByPath(window.location.pathname);
+    return idx >= 0 ? (ORDER[idx + 1] || null) : null;
+  }
+  function getPrev(idOrPathname = null) {
+    const idx = idOrPathname
+      ? (idOrPathname.startsWith('/') ? indexByPath(idOrPathname) : indexById(idOrPathname))
+      : indexByPath(window.location.pathname);
+    return idx > 0 ? ORDER[idx - 1] : null;
+  }
+
+  function isOnboarded() {
+    return localStorage.getItem('ax_onboarded') === '1';
+  }
+
+  /**
+   * Guard navigation to enforce linear flow.
+   * - Requires auth for all pages except index.
+   * - Forces onboarding until completed.
+   *
+   * This is intentionally client-side only; backend enforcement is added later
+   * via persisted onboarding state.
+   */
+  function guard(activeId) {
+    const current = getCurrent();
+    const onIndex = window.location.pathname === '/college/index.html';
+
+    if (!onIndex) {
+      if (!Auth.isLoggedIn()) {
+        window.location.href = '/college/index.html';
+        return false;
+      }
+      if (!isOnboarded()) {
+        // Allow onboarding itself; otherwise force it.
+        if (window.location.pathname !== '/college/onboarding.html') {
+          window.location.href = '/college/onboarding.html';
+          return false;
+        }
+      }
+    } else {
+      // If already authenticated, skip to dashboard if onboarded, else onboarding.
+      if (Auth.isLoggedIn()) {
+        window.location.href = isOnboarded() ? '/college/dashboard.html' : '/college/onboarding.html';
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  function goNext() {
+    const next = getNext();
+    if (next) window.location.href = next.path;
+  }
+  function goPrev() {
+    const prev = getPrev();
+    if (prev) window.location.href = prev.path;
+  }
+
+  async function syncOnboarding() {
+    try {
+      const cfg = await API.get('/connector-config');
+      localStorage.setItem('ax_onboarded', cfg.onboarding_completed ? '1' : '0');
+      if (cfg?.college?.connector_url) localStorage.setItem('ax_connector_url', cfg.college.connector_url);
+      if (cfg?.college?.name) {
+        const u = JSON.parse(localStorage.getItem('ax_user') || '{}');
+        u.college_name = cfg.college.name;
+        localStorage.setItem('ax_user', JSON.stringify(u));
+      }
+      return cfg;
+    } catch {
+      return null;
+    }
+  }
+
+  return { ORDER, getCurrent, getNext, getPrev, guard, goNext, goPrev, isOnboarded, syncOnboarding };
+})();

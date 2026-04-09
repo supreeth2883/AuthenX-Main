@@ -108,7 +108,7 @@
 
 <script src="/college/app.js"></script>
 <script>
-if (!Auth.requireAuth()) {} // redirects if not logged in
+if (!Flow.guard('dashboard')) {} // enforces linear flow + auth
 
 // Mount sidebar
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('dashboard');
@@ -181,17 +181,16 @@ function renderActivity(events) {
 async function checkConnectorDetail() {
   const el = document.getElementById('connector-detail');
   try {
-    const res = await fetch(Auth.getConnectorUrl('/health'));
-    if (res.ok) {
-      const data = await res.json();
+    const data = await API.get('/connector/health');
+    if (data && (data.status === 'ok' || data.college_id)) {
       el.innerHTML = `
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
           <span style="color:var(--ax-verified);font-size:18px">✓</span>
           <span style="color:var(--ax-verified);font-weight:600">Live ERP Connected</span>
         </div>
         <div style="font-size:12px;color:var(--ax-subtle)">College: ${data.college || '—'}</div>
-        <div style="font-size:12px;color:var(--ax-subtle);margin-top:4px">Port: 9000 · Running since ${new Date(data.timestamp).toLocaleTimeString()}</div>`;
-    } else throw new Error();
+        <div style="font-size:12px;color:var(--ax-subtle);margin-top:4px">Connector: ${(data.connector_url || '').replace('http://','')} · Running since ${new Date(data.timestamp).toLocaleTimeString()}</div>`;
+    } else throw new Error('unreachable');
   } catch {
     el.innerHTML = `
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
@@ -202,7 +201,7 @@ async function checkConnectorDetail() {
   }
 }
 
-loadDashboard();
+Flow.syncOnboarding().finally(loadDashboard);
 </script>
 </body>
 </html>
