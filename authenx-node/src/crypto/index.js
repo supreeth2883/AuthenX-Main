@@ -142,7 +142,39 @@ function generateNonce() {
 }
 
 // ─── JWT (built-in, no jsonwebtoken pkg) ─────────────────────────────────────
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+// JWT_SECRET must be set in production. In development it is persisted to
+// aes_key.json so sessions survive server restarts.
+const JWT_SECRET = (() => {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+
+  if (process.env.NODE_ENV === 'production') {
+    console.error('FATAL: JWT_SECRET environment variable is required in production');
+    process.exit(1);
+  }
+
+  // Development: persist alongside AES key so JWTs survive restarts
+  const _fs   = require('node:fs');
+  const _path = require('node:path');
+  const keyFile = _path.join(process.cwd(), 'aes_key.json');
+  try {
+    if (_fs.existsSync(keyFile)) {
+      const data = JSON.parse(_fs.readFileSync(keyFile, 'utf8'));
+      if (data.jwt_secret) return data.jwt_secret;
+    }
+  } catch (_) { /* will generate */ }
+
+  const secret = crypto.randomBytes(64).toString('hex');
+  try {
+    const existing = _fs.existsSync(keyFile)
+      ? JSON.parse(_fs.readFileSync(keyFile, 'utf8'))
+      : {};
+    existing.jwt_secret = secret;
+    existing.generated  = new Date().toISOString();
+    _fs.writeFileSync(keyFile, JSON.stringify(existing, null, 2));
+  } catch (_) { /* could not persist */ }
+  console.warn('[auth] JWT_SECRET generated and persisted to aes_key.json (dev only)');
+  return secret;
+})();
 
 function base64urlEncode(buf) {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -177,6 +209,10 @@ function verifyJwt(token) {
   if (sig !== expected) throw new Error('Invalid JWT signature');
   const payload = JSON.parse(base64urlDecode(body).toString('utf8'));
   if (payload.exp < Math.floor(Date.now() / 1000)) throw new Error('JWT expired');
+  // Check if this JWT has been revoked
+  if (payload.jti && isJwtRevoked(payload.jti)) {
+    throw new Error('JWT has been revoked');
+  }
   return payload;
 }
 

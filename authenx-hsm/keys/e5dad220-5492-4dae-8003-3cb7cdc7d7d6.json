@@ -1,7 +1,8 @@
 {
   "college_id": "e5dad220-5492-4dae-8003-3cb7cdc7d7d6",
-  "private_key_hex": "5194763c9dd2c144fd32b90972a5dfc3338c9bd3bc3e9b9a2aa9ff0cb9d9a41c",
   "public_key_hex": "39301bc807013be9f11a863eaab320297eb349d780998c28835191aec8268bbe",
   "version": 1,
-  "created_at": "2026-04-06T07:50:59.827Z"
+  "created_at": "2026-04-06T07:50:59.827Z",
+  "encrypted_private_key": "WznUNHTcvqjw5JRmdpurWif6muuvdflCtyC6sAHjBrxnFzF6Y5T2/yi0emMRNYFyTSIo+sY4RAyE2Zln",
+  "migrated_to_encrypted": true
 }

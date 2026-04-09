@@ -22,6 +22,8 @@ const SQL_SCHEMA = `
     password_hash TEXT NOT NULL,
     role        TEXT NOT NULL CHECK(role IN ('super_admin','college_admin','employer')),
     college_id  TEXT REFERENCES colleges(id),
+    must_change_password INTEGER NOT NULL DEFAULT 0,
+    last_password_change TEXT,
     created_at  TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -33,11 +35,26 @@ const SQL_SCHEMA = `
     issuance_signature  TEXT NOT NULL,
     schema_version      TEXT NOT NULL DEFAULT '1.0',
     credential_type     TEXT NOT NULL,
-    status              TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked')),
+    status              TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','revoked','superseded','corrected')),
     revocation_reason   TEXT,
     revoked_at          TEXT,
     issued_at           TEXT NOT NULL DEFAULT (datetime('now')),
-    UNIQUE(college_id, student_ref_token)
+    superseded_by       TEXT REFERENCES verification_tokens(id),
+    correction_token_id TEXT REFERENCES verification_tokens(id),
+    verification_count  INTEGER NOT NULL DEFAULT 0,
+    last_verified_at    TEXT,
+    last_result         TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS disclosure_policies (
+    id          TEXT PRIMARY KEY,
+    college_id  TEXT NOT NULL REFERENCES colleges(id),
+    field_name  TEXT NOT NULL,
+    visibility  TEXT NOT NULL DEFAULT 'always_show' CHECK(visibility IN ('always_show','always_hide','admin_decision')),
+    role_filter TEXT NOT NULL DEFAULT 'all',
+    require_approval INTEGER NOT NULL DEFAULT 0,
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(college_id, field_name)
   );
 
   CREATE TABLE IF NOT EXISTS verification_requests (
@@ -128,6 +145,8 @@ const SQL_SCHEMA = `
 
   CREATE INDEX IF NOT EXISTS idx_tokens_college   ON verification_tokens(college_id);
   CREATE INDEX IF NOT EXISTS idx_tokens_student   ON verification_tokens(student_ref_token);
+  CREATE INDEX IF NOT EXISTS idx_tokens_status    ON verification_tokens(status);
+  CREATE INDEX IF NOT EXISTS idx_disclosure_college ON disclosure_policies(college_id);
   CREATE INDEX IF NOT EXISTS idx_requests_token   ON verification_requests(token_id);
   CREATE INDEX IF NOT EXISTS idx_requests_created ON verification_requests(created_at);
   CREATE INDEX IF NOT EXISTS idx_login_email      ON login_attempts(email);

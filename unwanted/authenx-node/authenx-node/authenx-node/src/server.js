@@ -108,15 +108,18 @@ async function seedDatabase() {
 
   console.log('  → Seeding database...');
 
-  // Generate Ed25519 key pair for mock college connector
-  const { privateKeyHex, publicKeyHex } = generateEd25519KeyPair();
-  process.env.MOCK_CONNECTOR_PRIV_KEY = privateKeyHex;
+  // Create 3 colleges (IITB is fixed configuration for end-to-end testing with actual connector)
+  const iitbId = '992c65ba-11e1-4a56-b065-a365bdb4e129';
+  const iitbPrivKey = '470c1735bedb8843af427e6d3b02175b236031b963d79b54cba2b26f8301cbfe';
+  const iitbPubKey = 'a1546a6a7be9d3248a23f05ce3d9287bd402261fd54c14b5300b23bb4592d4d3';
+  const iitbSharedSecret = '9e8e08217224368a8638ec4145fbc0e61136852694e36accbf71e2d24009d7ac';
+  
+  process.env.MOCK_CONNECTOR_PRIV_KEY = iitbPrivKey; // set to static so demo endpoints route properly
 
-  // Create 3 colleges
   const colleges = [
-    { id: crypto.randomUUID(), name: 'IIT Bombay',   short_code: 'IITB',  connector_url: 'mock', shared_secret: crypto.randomBytes(32).toString('hex'), public_key_hex: publicKeyHex },
-    { id: crypto.randomUUID(), name: 'NIT Calicut',  short_code: 'NITC',  connector_url: 'mock', shared_secret: crypto.randomBytes(32).toString('hex'), public_key_hex: publicKeyHex },
-    { id: crypto.randomUUID(), name: 'BITS Pilani',  short_code: 'BITS',  connector_url: 'mock', shared_secret: crypto.randomBytes(32).toString('hex'), public_key_hex: publicKeyHex },
+    { id: iitbId, name: 'IIT Bombay',   short_code: 'IITB',  connector_url: 'http://localhost:9000', shared_secret: iitbSharedSecret, public_key_hex: iitbPubKey },
+    { id: crypto.randomUUID(), name: 'NIT Calicut',  short_code: 'NITC',  connector_url: 'mock', shared_secret: crypto.randomBytes(32).toString('hex'), public_key_hex: iitbPubKey },
+    { id: crypto.randomUUID(), name: 'BITS Pilani',  short_code: 'BITS',  connector_url: 'mock', shared_secret: crypto.randomBytes(32).toString('hex'), public_key_hex: iitbPubKey },
   ];
   for (const c of colleges) {
     run('INSERT INTO colleges (id,name,short_code,public_key_hex,connector_url,shared_secret) VALUES (?,?,?,?,?,?)',
@@ -151,7 +154,7 @@ async function seedDatabase() {
     };
     const canonical  = buildCanonicalJson(fields);
     const canonical_hash = sha256(canonical);
-    const issuance_signature = signEd25519(canonical_hash, privateKeyHex);
+    const issuance_signature = signEd25519(canonical_hash, iitbPrivKey);
     const token_id = crypto.randomUUID();
 
     run(`INSERT INTO verification_tokens

@@ -5,22 +5,25 @@
  * Zero external dependencies — uses only Node 22 built-in modules
  */
 
-const http    = require('node:http');
-const crypto  = require('node:crypto');
+const http = require('node:http');
+const crypto = require('node:crypto');
 const { URL } = require('node:url');
 
 const { getDb, run, queryOne, query } = require('./db/client.js');
 const { hashPassword, generateEd25519KeyPair, signEd25519, sha256, buildCanonicalJson, encryptCode } = require('./crypto/index.js');
 
-const { login, refreshAuth, logout, logSecurityEvent, verifyMfaLogin, enrollMfa, confirmMfaSetup } = require('./routes/auth.js');
+const { login, refreshAuth, logout, logSecurityEvent, verifyMfaLogin, enrollMfa, confirmMfaSetup, changePassword } = require('./routes/auth.js');
 const { listColleges, getCollege, createCollege } = require('./routes/colleges.js');
 const { issueToken, revokeToken, getToken, listTokens } = require('./routes/tokens.js');
-const { decodeCode, liveVerify }        = require('./routes/verify.js');
-const { getAuditLog, getStats }         = require('./routes/audit.js');
-const { sanitizeObject }                = require('./middleware/validation.js');
+const { decodeCode, liveVerify } = require('./routes/verify.js');
+const { getAuditLog, getStats, exportAuditLog } = require('./routes/audit.js');
+const { getTokenDetails, correctToken } = require('./routes/tokens-extra.js');
+const { getDisclosurePolicy, saveDisclosurePolicy } = require('./routes/disclosure.js');
+const { getSecurityStats } = require('./routes/security.js');
+const { sanitizeObject } = require('./middleware/validation.js');
 const { createRequestLogger, log, logStartup } = require('./middleware/logger.js');
 const metrics = require('./middleware/metrics.js');
-const fraud   = require('./middleware/fraud-detector.js');
+const fraud = require('./middleware/fraud-detector.js');
 const { privacyNotice, getConsent, grantConsent, deleteConsent, dataAccessRequest, erasureRequest, enforceRetention } = require('./routes/privacy.js');
 
 const PORT = process.env.PORT || 3000;
@@ -40,7 +43,7 @@ function readBody(req) {
       }
       chunks.push(c);
     });
-    
+
     req.on('end', () => {
       const raw = Buffer.concat(chunks).toString('utf8');
       if (!raw) return resolve({});
@@ -52,10 +55,28 @@ function readBody(req) {
 }
 
 // ─── CORS + Security headers ─────────────────────────────────────────────────
-function setCors(res) {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+// Allowed origins - configure via environment variable or use defaults
+const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000')
+  .split(',')
+  .map(o => o.trim())
+  .filter(Boolean);
+
+function setCors(req, res) {
+  const origin = req.headers.origin;
+
+  // Check if origin is in allowed list
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+  } else if (!origin) {
+    // Same-origin requests (no Origin header) - allow for API calls from server
+    res.setHeader('Access-Control-Allow-Origin', ALLOWED_ORIGINS[0] || 'http://localhost:3000');
+  }
+  // If origin not allowed, don't set Access-Control-Allow-Origin (browser will block)
+
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
   // Security headers
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
@@ -91,19 +112,29 @@ setInterval(() => {
 
 // ─── Router ───────────────────────────────────────────────────────────────────
 async function router(req, res) {
-  setCors(res);
+  // Generate request correlation ID for distributed tracing
+  const requestId = crypto.randomUUID();
+  req.requestId = requestId;
+  res.setHeader('X-Request-ID', requestId);
+
+  setCors(req, res);
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
 
   const urlObj = new URL(req.url, `http://localhost:${PORT}`);
-  const path   = urlObj.pathname;
+  const path = urlObj.pathname;
   const method = req.method;
   const requestStart = Date.now();
 
-  // Track response for metrics
+  // Log incoming request
+  const logger = createRequestLogger(req, res);
+  logger.info(`${method} ${path}`);
+
+  // Track response for metrics and logging
   const origEnd = res.end.bind(res);
-  res.end = function(...args) {
+  res.end = function (...args) {
     const latency = Date.now() - requestStart;
     metrics.recordRequest(method, path, res.statusCode || 200, latency);
+    logger.info(`${method} ${path} ${res.statusCode || 200} ${latency}ms [${requestId}]`);
     return origEnd(...args);
   };
 
@@ -135,26 +166,30 @@ async function router(req, res) {
   }
 
   // Auth routes
-  if (path === '/v1/auth/login'    && method === 'POST') return login(req, res, body);
-  if (path === '/v1/auth/refresh'  && method === 'POST') return refreshAuth(req, res, body);
-  if (path === '/v1/auth/logout'   && method === 'POST') return logout(req, res, body);
-  if (path === '/v1/auth/mfa/verify'  && method === 'POST') return verifyMfaLogin(req, res, body);
-  if (path === '/v1/auth/mfa/enroll'  && method === 'POST') return enrollMfa(req, res);
+  if (path === '/v1/auth/login' && method === 'POST') return login(req, res, body);
+  if (path === '/v1/auth/refresh' && method === 'POST') return refreshAuth(req, res, body);
+  if (path === '/v1/auth/logout' && method === 'POST') return logout(req, res, body);
+  if (path === '/v1/auth/change-password' && method === 'POST') return changePassword(req, res, body);
+  if (path === '/v1/auth/mfa/verify' && method === 'POST') return verifyMfaLogin(req, res, body);
+  if (path === '/v1/auth/mfa/enroll' && method === 'POST') return enrollMfa(req, res);
   if (path === '/v1/auth/mfa/confirm' && method === 'POST') return confirmMfaSetup(req, res, body);
 
   // College routes
-  if (path === '/v1/colleges'    && method === 'GET')  return listColleges(req, res);
-  if (path === '/v1/colleges'    && method === 'POST') return createCollege(req, res, body);
+  if (path === '/v1/colleges' && method === 'GET') return listColleges(req, res);
+  if (path === '/v1/colleges' && method === 'POST') return createCollege(req, res, body);
   const collegeMatch = path.match(/^\/v1\/colleges\/([^/]+)$/);
-  if (collegeMatch             && method === 'GET')  return getCollege(req, res, collegeMatch[1]);
+  if (collegeMatch && method === 'GET') return getCollege(req, res, collegeMatch[1]);
 
   // Token routes
-  if (path === '/v1/tokens'          && method === 'GET')  return listTokens(req, res);
-  if (path === '/v1/tokens/issue'    && method === 'POST') return issueToken(req, res, body);
-  if (path === '/v1/tokens/revoke'   && method === 'POST') return revokeToken(req, res, body);
+  if (path === '/v1/tokens' && method === 'GET') return listTokens(req, res);
+  if (path === '/v1/tokens/issue' && method === 'POST') return issueToken(req, res, body);
+  if (path === '/v1/tokens/revoke' && method === 'POST') return revokeToken(req, res, body);
+  if (path === '/v1/tokens/correct' && method === 'POST') return correctToken(req, res, body);
   if (path === '/v1/tokens/analytics' && method === 'GET') return tokenAnalytics(req, res);
+  const tokenDetailsMatch = path.match(/^\/v1\/tokens\/([^/]+)\/details$/);
+  if (tokenDetailsMatch && method === 'GET') return getTokenDetails(req, res, tokenDetailsMatch[1]);
   const tokenMatch = path.match(/^\/v1\/tokens\/([^/]+)$/);
-  if (tokenMatch                     && method === 'GET')  return getToken(req, res, tokenMatch[1]);
+  if (tokenMatch && method === 'GET') return getToken(req, res, tokenMatch[1]);
 
   // Verify routes
   if (path === '/v1/verify/code' && method === 'POST') return decodeCode(req, res, body);
@@ -162,9 +197,17 @@ async function router(req, res) {
   if (path === '/v1/verify/bulk' && method === 'POST') return bulkVerify(req, res, body);
 
   // Audit routes
-  if (path === '/v1/audit'          && method === 'GET') return getAuditLog(req, res, urlObj);
-  if (path === '/v1/audit/stats'    && method === 'GET') return getStats(req, res);
+  if (path === '/v1/audit' && method === 'GET') return getAuditLog(req, res, urlObj);
+  if (path === '/v1/audit/stats' && method === 'GET') return getStats(req, res);
+  if (path === '/v1/audit/export' && method === 'GET') return exportAuditLog(req, res, urlObj);
   if (path === '/v1/audit/security' && method === 'GET') return getSecurityEvents(req, res, urlObj);
+
+  // Disclosure policy routes
+  if (path === '/v1/disclosure-policy' && method === 'GET') return getDisclosurePolicy(req, res);
+  if (path === '/v1/disclosure-policy' && method === 'PUT') return saveDisclosurePolicy(req, res, body);
+
+  // Security stats
+  if (path === '/v1/security/stats' && method === 'GET') return getSecurityStats(req, res);
 
   // Connector health
   if (path === '/v1/connectors/health' && method === 'GET') return connectorHealthCheck(req, res);
@@ -179,12 +222,12 @@ async function router(req, res) {
   if (path === '/v1/fraud-alerts' && method === 'GET') return serveFraudAlerts(req, res, urlObj);
 
   // Privacy & DPDP compliance routes
-  if (path === '/v1/privacy/notice'    && method === 'GET')    return privacyNotice(req, res);
-  if (path === '/v1/privacy/consent'   && method === 'GET')    return getConsent(req, res);
-  if (path === '/v1/privacy/consent'   && method === 'POST')   return grantConsent(req, res, body);
-  if (path === '/v1/privacy/consent'   && method === 'DELETE') return deleteConsent(req, res, body);
-  if (path === '/v1/privacy/data-access' && method === 'GET')  return dataAccessRequest(req, res);
-  if (path === '/v1/privacy/erasure'   && method === 'POST')   return erasureRequest(req, res, body);
+  if (path === '/v1/privacy/notice' && method === 'GET') return privacyNotice(req, res);
+  if (path === '/v1/privacy/consent' && method === 'GET') return getConsent(req, res);
+  if (path === '/v1/privacy/consent' && method === 'POST') return grantConsent(req, res, body);
+  if (path === '/v1/privacy/consent' && method === 'DELETE') return deleteConsent(req, res, body);
+  if (path === '/v1/privacy/data-access' && method === 'GET') return dataAccessRequest(req, res);
+  if (path === '/v1/privacy/erasure' && method === 'POST') return erasureRequest(req, res, body);
   if (path === '/v1/privacy/retention/enforce' && method === 'POST') return enforceRetention(req, res);
 
   // 404
@@ -240,16 +283,33 @@ function tokenAnalytics(req, res) {
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
 
-  const filter = claims.role === 'college_admin' ? `WHERE t.college_id = '${claims.college_id}'` : '';
+  // Use parameterized queries to prevent SQL injection
+  const isCollegeAdmin = claims.role === 'college_admin';
+  const collegeId = claims.college_id;
 
-  const monthly = query(`
-    SELECT strftime('%Y-%m', t.issued_at) as month,
-           COUNT(*) as issued,
-           SUM(CASE WHEN t.status = 'active' THEN 1 ELSE 0 END) as active,
-           SUM(CASE WHEN t.status = 'revoked' THEN 1 ELSE 0 END) as revoked
-    FROM verification_tokens t ${filter}
-    GROUP BY month ORDER BY month DESC LIMIT 12
-  `);
+  // Validate college_id format if present (UUID format)
+  if (isCollegeAdmin && collegeId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(collegeId)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'Invalid college_id format' }));
+  }
+
+  const monthly = isCollegeAdmin
+    ? query(`
+        SELECT strftime('%Y-%m', t.issued_at) as month,
+               COUNT(*) as issued,
+               SUM(CASE WHEN t.status = 'active' THEN 1 ELSE 0 END) as active,
+               SUM(CASE WHEN t.status = 'revoked' THEN 1 ELSE 0 END) as revoked
+        FROM verification_tokens t WHERE t.college_id = ?
+        GROUP BY month ORDER BY month DESC LIMIT 12
+      `, [collegeId])
+    : query(`
+        SELECT strftime('%Y-%m', t.issued_at) as month,
+               COUNT(*) as issued,
+               SUM(CASE WHEN t.status = 'active' THEN 1 ELSE 0 END) as active,
+               SUM(CASE WHEN t.status = 'revoked' THEN 1 ELSE 0 END) as revoked
+        FROM verification_tokens t
+        GROUP BY month ORDER BY month DESC LIMIT 12
+      `);
 
   const verificationTrends = query(`
     SELECT date(r.created_at) as day,
@@ -273,8 +333,8 @@ function getSecurityEvents(req, res, urlObj) {
   if (!claims) return;
   if (!requireRole(claims, ['super_admin'], res)) return;
 
-  const limit  = parseInt(urlObj.searchParams.get('limit')  || '50', 10);
-  const offset = parseInt(urlObj.searchParams.get('offset') || '0',  10);
+  const limit = parseInt(urlObj.searchParams.get('limit') || '50', 10);
+  const offset = parseInt(urlObj.searchParams.get('offset') || '0', 10);
 
   const events = query(`
     SELECT * FROM security_events ORDER BY created_at DESC LIMIT ? OFFSET ?
@@ -372,11 +432,11 @@ function serveFraudAlerts(req, res, urlObj) {
   if (!claims) return;
   if (!requireRole(claims, 'super_admin', res)) return;
 
-  const limit  = parseInt(urlObj.searchParams.get('limit') || '50', 10);
+  const limit = parseInt(urlObj.searchParams.get('limit') || '50', 10);
   const offset = parseInt(urlObj.searchParams.get('offset') || '0', 10);
 
   const alerts = query('SELECT * FROM fraud_alerts ORDER BY created_at DESC LIMIT ? OFFSET ?', [limit, offset]);
-  const total  = query('SELECT COUNT(*) as cnt FROM fraud_alerts')[0]?.cnt || 0;
+  const total = query('SELECT COUNT(*) as cnt FROM fraud_alerts')[0]?.cnt || 0;
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ alerts, count: alerts.length, total, limit, offset }));
@@ -405,11 +465,11 @@ async function seedDatabase() {
 
   console.log('  → Seeding database (multi-college)...');
 
-  const _fs   = require('node:fs');
+  const _fs = require('node:fs');
   const _path = require('node:path');
 
   // ── Load college registry (generated by colleges/setup.js) ──────────────
-  const registryPath = _path.join(process.cwd(), '..', 'colleges', 'registry.json');
+  const registryPath = _path.join(process.cwd(), '..', '..', 'colleges', 'registry.json');
   let registry = [];
   if (_fs.existsSync(registryPath)) {
     registry = JSON.parse(_fs.readFileSync(registryPath, 'utf8'));
@@ -434,7 +494,7 @@ async function seedDatabase() {
   } else {
     // Legacy fallback
     const fallbackColleges = [
-      { id: crypto.randomUUID(), name: 'IIT Bombay',  short_code: 'IITB', connector_url: 'mock', shared_secret: crypto.randomBytes(32).toString('hex'), public_key_hex: fallbackPub },
+      { id: crypto.randomUUID(), name: 'IIT Bombay', short_code: 'IITB', connector_url: 'mock', shared_secret: crypto.randomBytes(32).toString('hex'), public_key_hex: fallbackPub },
       { id: crypto.randomUUID(), name: 'NIT Calicut', short_code: 'NITC', connector_url: 'mock', shared_secret: crypto.randomBytes(32).toString('hex'), public_key_hex: fallbackPub },
       { id: crypto.randomUUID(), name: 'BITS Pilani', short_code: 'BITS', connector_url: 'mock', shared_secret: crypto.randomBytes(32).toString('hex'), public_key_hex: fallbackPub },
     ];
@@ -446,22 +506,22 @@ async function seedDatabase() {
   }
 
   // ── Create users ────────────────────────────────────────────────────────
-  const adminHash   = await hashPassword('Admin@123');
+  const adminHash = await hashPassword('Admin@123');
   const collegeHash = await hashPassword('College@123');
   const employerHash = await hashPassword('Employer@123');
 
-  // Super admin
-  run('INSERT INTO users (id,email,password_hash,role) VALUES (?,?,?,?)',
+  // Super admin - must change default password on first login
+  run('INSERT INTO users (id,email,password_hash,role,must_change_password) VALUES (?,?,?,?,1)',
     [crypto.randomUUID(), 'admin@authenx.in', adminHash, 'super_admin']);
 
-  // College admins — one per college
+  // College admins — one per college, must change default password
   for (const c of colleges) {
     const email = `${c.short_code.toLowerCase()}@authenx.in`;
-    run('INSERT OR IGNORE INTO users (id,email,password_hash,role,college_id) VALUES (?,?,?,?,?)',
+    run('INSERT OR IGNORE INTO users (id,email,password_hash,role,college_id,must_change_password) VALUES (?,?,?,?,?,1)',
       [crypto.randomUUID(), email, collegeHash, 'college_admin', c.id]);
   }
 
-  // Employer accounts
+  // Employer accounts - must change default password
   const employers = [
     'recruiter@infosys.com',
     'hr@tcs.com',
@@ -470,7 +530,7 @@ async function seedDatabase() {
     'campus@microsoft.com',
   ];
   for (const email of employers) {
-    run('INSERT OR IGNORE INTO users (id,email,password_hash,role) VALUES (?,?,?,?)',
+    run('INSERT OR IGNORE INTO users (id,email,password_hash,role,must_change_password) VALUES (?,?,?,?,1)',
       [crypto.randomUUID(), email, employerHash, 'employer']);
   }
 
@@ -481,9 +541,9 @@ async function seedDatabase() {
   // Pick first 3 colleges for demo tokens
   const demoColleges = colleges.slice(0, 3);
   const demoStudents = [
-    { student_ref_token: 'stu_ref_001', name: 'SUPREETH K',    degree: 'BTECH', branch: 'COMPUTER SCIENCE',       cgpa: '8.9', graduation_year: '2024', issue_date: '2024-06-15' },
-    { student_ref_token: 'stu_ref_002', name: 'PRIYA SHARMA',  degree: 'MTECH', branch: 'ELECTRONICS',            cgpa: '9.1', graduation_year: '2024', issue_date: '2024-06-15' },
-    { student_ref_token: 'stu_ref_003', name: 'RAHUL NAIR',    degree: 'BTECH', branch: 'MECHANICAL ENGINEERING', cgpa: '7.8', graduation_year: '2023', issue_date: '2023-06-15' },
+    { student_ref_token: 'stu_ref_001', name: 'SUPREETH K', degree: 'BTECH', branch: 'COMPUTER SCIENCE', cgpa: '8.9', graduation_year: '2024', issue_date: '2024-06-15' },
+    { student_ref_token: 'stu_ref_002', name: 'PRIYA SHARMA', degree: 'MTECH', branch: 'ELECTRONICS', cgpa: '9.1', graduation_year: '2024', issue_date: '2024-06-15' },
+    { student_ref_token: 'stu_ref_003', name: 'RAHUL NAIR', degree: 'BTECH', branch: 'MECHANICAL ENGINEERING', cgpa: '7.8', graduation_year: '2023', issue_date: '2023-06-15' },
   ];
 
   for (let i = 0; i < demoStudents.length; i++) {
@@ -492,7 +552,7 @@ async function seedDatabase() {
 
     // Try to load private key from HSM key-store file
     let privKey = fallbackPriv;
-    const hsmKeyPath = _path.join(process.cwd(), '..', 'authenx-hsm', 'keys', `${college.id}.json`);
+    const hsmKeyPath = _path.join(process.cwd(), '..', '..', 'authenx-hsm', 'keys', `${college.id}.json`);
     if (_fs.existsSync(hsmKeyPath)) {
       try {
         const keyData = JSON.parse(_fs.readFileSync(hsmKeyPath, 'utf8'));
@@ -971,8 +1031,47 @@ function relTime(ts) {
 </html>`;
 
 // ─── Demo issue endpoint (for web UI, handles signing internally) ──────────────
+/**
+ * Sign a payload via the local HSM service.
+ * The HSM returns a hex-encoded signature; we convert to base64 to match
+ * the format expected by verifyEd25519.
+ */
+async function signViaHsm(college_id, payload) {
+  const hsmPort = parseInt(process.env.HSM_PORT || '9099', 10);
+  return new Promise((resolve, reject) => {
+    const reqBody = JSON.stringify({ college_id, payload });
+    const req = require('node:http').request({
+      hostname: '127.0.0.1',
+      port: hsmPort,
+      path: '/sign',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(reqBody),
+      },
+    }, (response) => {
+      let data = '';
+      response.on('data', c => data += c);
+      response.on('end', () => {
+        try {
+          const parsed = JSON.parse(data);
+          if (!parsed.signature) {
+            return reject(new Error(parsed.error || `HSM signing failed (HTTP ${response.statusCode})`));
+          }
+          // HSM returns hex; convert to base64 for verifyEd25519
+          resolve(Buffer.from(parsed.signature, 'hex').toString('base64'));
+        } catch (err) { reject(err); }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(5000, () => { req.destroy(); reject(new Error('HSM timeout')); });
+    req.write(reqBody);
+    req.end();
+  });
+}
+
 async function issueDemoRoute(req, res, body) {
-  const { requireAuth, requireRole } = require('./middleware/auth.js');
+  const { requireAuth } = require('./middleware/auth.js');
   const claims = requireAuth(req, res);
   if (!claims) return;
 
@@ -992,48 +1091,128 @@ async function issueDemoRoute(req, res, body) {
     return res.end(JSON.stringify({ error: 'College not found' }));
   }
 
-  const privKey = process.env.MOCK_CONNECTOR_PRIV_KEY;
-  if (!privKey) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Mock connector key not initialised' }));
-  }
-
   const fields = {
     schema_version: '1.0', issuer_id: college_id, student_ref_token,
     name, degree, branch, credential_type,
     cgpa: cgpa || '', graduation_year: graduation_year || '',
     issue_date: issue_date || new Date().toISOString().split('T')[0],
   };
-  const canonical      = buildCanonicalJson(fields);
+  const canonical = buildCanonicalJson(fields);
   const canonical_hash = sha256(canonical);
-  const issuance_signature = signEd25519(canonical_hash, privKey);
 
-  // Re-use the real issue route logic inline
+  // Sign via HSM — uses the college's registered Ed25519 private key
+  let issuance_signature;
+  try {
+    issuance_signature = await signViaHsm(college_id, canonical_hash);
+  } catch (err) {
+    res.writeHead(502, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'HSM signing failed — is the HSM service running?', detail: err.message }));
+  }
+
+  // Verify the signature immediately to catch key-mismatch early
+  const sigOk = verifyEd25519(canonical_hash, issuance_signature, college.public_key_hex);
+  if (!sigOk) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      error: 'HSM signature does not match college public key — key mismatch detected',
+      hint: 'Run node authenx-hsm/server.js and ensure the college public key in the DB matches the HSM key.',
+    }));
+  }
+
+  // Proper UPDATE/INSERT — avoids FK cascade issues from INSERT OR REPLACE
   const existing = queryOne(
     'SELECT id, status FROM verification_tokens WHERE college_id = ? AND student_ref_token = ?',
     [college_id, student_ref_token]
   );
 
-  const token_id = existing ? existing.id : crypto.randomUUID();
-
-  run(`INSERT OR REPLACE INTO verification_tokens
-       (id, college_id, student_ref_token, canonical_hash, issuance_signature, schema_version, credential_type, status)
-       VALUES (?,?,?,?,?,?,?,'active')`,
-    [token_id, college_id, student_ref_token, canonical_hash, issuance_signature, '1.0', credential_type]);
+  let token_id;
+  if (existing && existing.status === 'revoked') {
+    token_id = existing.id;
+    run(`UPDATE verification_tokens SET
+         canonical_hash = ?, issuance_signature = ?, schema_version = '1.0',
+         credential_type = ?, status = 'active',
+         revocation_reason = NULL, revoked_at = NULL,
+         issued_at = datetime('now')
+         WHERE id = ?`,
+      [canonical_hash, issuance_signature, credential_type, token_id]);
+  } else if (!existing) {
+    token_id = crypto.randomUUID();
+    run(`INSERT INTO verification_tokens
+         (id, college_id, student_ref_token, canonical_hash, issuance_signature, schema_version, credential_type, status)
+         VALUES (?,?,?,?,?,'1.0',?,'active')`,
+      [token_id, college_id, student_ref_token, canonical_hash, issuance_signature, credential_type]);
+  } else {
+    // Active token already exists — re-issue replaces it
+    token_id = existing.id;
+    run(`UPDATE verification_tokens SET
+         canonical_hash = ?, issuance_signature = ?, schema_version = '1.0',
+         credential_type = ?, issued_at = datetime('now')
+         WHERE id = ?`,
+      [canonical_hash, issuance_signature, credential_type, token_id]);
+  }
 
   const authenx_code = encryptCode({
-    v: 1, token_id, college_id, student_ref_token, credential_type,
+    v: 2, token_id, college_id, student_ref_token, credential_type,
     issued_at: new Date().toISOString(),
+    expires_at: null,
+    checksum: sha256(`${token_id}:${college_id}:${student_ref_token}:${credential_type}`),
   });
 
   res.writeHead(201, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ message: 'Token issued', token_id, canonical_hash, authenx_code }));
 }
 
+// ─── Startup Config Validation ───────────────────────────────────────────────
+function validateStartupConfig() {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const errors = [];
+  const warnings = [];
+
+  // AES_KEY_HEX: must be exactly 64 hex chars (32 bytes) if provided
+  if (process.env.AES_KEY_HEX) {
+    if (!/^[0-9a-fA-F]{64}$/.test(process.env.AES_KEY_HEX)) {
+      errors.push('AES_KEY_HEX must be exactly 64 hex characters (32 bytes)');
+    }
+  } else if (isProduction) {
+    errors.push('AES_KEY_HEX is required in production');
+  } else {
+    warnings.push('AES_KEY_HEX not set — using persisted dev key from aes_key.json');
+  }
+
+  // JWT_SECRET: must be at least 32 chars
+  if (process.env.JWT_SECRET) {
+    if (process.env.JWT_SECRET.length < 32) {
+      errors.push('JWT_SECRET must be at least 32 characters');
+    }
+  } else if (isProduction) {
+    errors.push('JWT_SECRET is required in production');
+  } else {
+    warnings.push('JWT_SECRET not set — using persisted dev secret from aes_key.json');
+  }
+
+  // HSM_MASTER_KEY: required in production
+  if (isProduction && !process.env.HSM_MASTER_KEY) {
+    warnings.push('HSM_MASTER_KEY not set — HSM will reject startup in production');
+  }
+
+  // CORS config
+  if (isProduction && !process.env.CORS_ALLOWED_ORIGINS) {
+    warnings.push('CORS_ALLOWED_ORIGINS not set — using default localhost origins');
+  }
+
+  for (const w of warnings) console.warn(`  ⚠  CONFIG: ${w}`);
+  if (errors.length > 0) {
+    for (const e of errors) console.error(`  ✖  FATAL CONFIG: ${e}`);
+    process.exit(1);
+  }
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
   console.log('\n🔷 AuthenX — Academic Credential Infrastructure (Multi-College)');
   console.log('━'.repeat(55));
+
+  validateStartupConfig();
 
   console.log('→ Initialising database...');
   getDb(); // runs schema migration
@@ -1043,7 +1222,7 @@ async function main() {
   // This ensures the demo issue route can sign with any college's key.
   try {
     const _path = require('node:path');
-    const _fs   = require('node:fs');
+    const _fs = require('node:fs');
 
     // Method 1: Multi-college key sync from HSM keys directory
     const hsmKeysDir = _path.join(process.cwd(), '..', 'authenx-hsm', 'keys');
@@ -1080,18 +1259,52 @@ async function main() {
   // Inject demo route into router (after routes are loaded)
   const originalRouter = router;
   const wrappedRouter = async (req, res) => {
-    setCors(res);
+    setCors(req, res);
     if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
     const urlObj = new URL(req.url, `http://localhost:${PORT}`);
     if (urlObj.pathname === '/v1/tokens/issue-demo' && req.method === 'POST') {
       let body = {};
-      try { body = await readBody(req); } catch {}
+      try { body = await readBody(req); } catch { }
       return issueDemoRoute(req, res, body);
     }
     return originalRouter(req, res);
   };
 
   const server = http.createServer(wrappedRouter);
+
+  // ─── Graceful Shutdown ────────────────────────────────────────────────────
+  let isShuttingDown = false;
+
+  function gracefulShutdown(signal) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+
+    console.log(`\n🛑 ${signal} received - starting graceful shutdown...`);
+
+    // Stop accepting new connections
+    server.close(() => {
+      console.log('✓ All connections closed');
+
+      // Flush any pending audit logs
+      try {
+        const alertCount = fraud.flushAlerts().length;
+        if (alertCount > 0) console.log(`✓ Flushed ${alertCount} fraud alerts`);
+      } catch { }
+
+      console.log('✅ Shutdown complete');
+      process.exit(0);
+    });
+
+    // Force close after 10 seconds if graceful shutdown takes too long
+    setTimeout(() => {
+      console.error('⚠️  Forced shutdown after 10s timeout');
+      process.exit(1);
+    }, 10000);
+  }
+
+  process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
   server.listen(PORT, '0.0.0.0', () => {
     const collegeCount = query('SELECT COUNT(*) as cnt FROM colleges WHERE active=1')[0]?.cnt || 0;
     const userCount = query('SELECT COUNT(*) as cnt FROM users')[0]?.cnt || 0;

@@ -77,7 +77,11 @@ async function signEd25519(message) {
       res.on('data', c => data += c);
       res.on('end', () => {
         try {
-          const sigHex = JSON.parse(data).signature;
+          const parsed = JSON.parse(data || '{}');
+          const sigHex = parsed.signature;
+          if (!sigHex) {
+            return reject(new Error(parsed.error || `HSM signing failed with status ${res.statusCode}`));
+          }
           resolve(Buffer.from(sigHex, 'hex').toString('base64'));
         } catch (err) { reject(err); }
       });
@@ -172,7 +176,17 @@ function checkNonce(nonce) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', c => chunks.push(c));
+    let totalLength = 0;
+    const MAX_PAYLOAD_SIZE = 64 * 1024; // 64KB - connectors don't need large payloads
+
+    req.on('data', (c) => {
+      totalLength += c.length;
+      if (totalLength > MAX_PAYLOAD_SIZE) {
+        req.destroy();
+        return reject(new Error('Payload too large'));
+      }
+      chunks.push(c);
+    });
     req.on('end', () => {
       const rawBody = Buffer.concat(chunks).toString('utf8');
       try { resolve({ rawBody, parsed: rawBody ? JSON.parse(rawBody) : {} }); }
@@ -184,10 +198,17 @@ function readBody(req) {
 
 // ─── Request handler ──────────────────────────────────────────────────────────
 async function handler(req, res) {
+  // Generate request ID for tracing
+  const requestId = crypto.randomUUID();
+  res.setHeader('X-Request-ID', requestId);
+
   res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // Connector is internal service - restrict CORS to server-to-server calls only
+  // Browser clients should never directly access connectors
+  const allowedOrigin = process.env.AUTHENX_SERVER_ORIGIN || 'http://localhost:3000';
+  res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-AuthenX-Timestamp,X-AuthenX-Nonce,X-AuthenX-Signature,X-AuthenX-College-ID,X-Request-ID');
 
   // Health check
   if (req.method === 'GET' && req.url === '/health') {
@@ -356,8 +377,8 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`║  College  : ${COLLEGE_NAME.padEnd(32)}║`);
   console.log(`║  Port     : ${String(PORT).padEnd(32)}║`);
   console.log(`║  DB       : ${DB_PATH.split('/').pop().padEnd(32)}║`);
-  console.log('║  Health   : GET http://localhost:9000/health ║');
-  console.log('║  Verify   : POST http://localhost:9000/verify║`');
+  console.log(`║  Health   : GET  http://localhost:${PORT}/health  ║`);
+  console.log(`║  Verify   : POST http://localhost:${PORT}/verify ║`);
   console.log('╚══════════════════════════════════════════════╝');
   console.log('');
 });
@@ -370,3 +391,28 @@ server.on('error', (err) => {
   }
   process.exit(1);
 });
+
+// ─── Graceful Shutdown ────────────────────────────────────────────────────────
+let isShuttingDown = false;
+
+function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`\n[connector] ${signal} received - shutting down ${COLLEGE_NAME}...`);
+
+  server.close(() => {
+    console.log(`[connector] ${COLLEGE_NAME} shutdown complete`);
+    process.exit(0);
+  });
+
+  // Force close after 5 seconds
+  setTimeout(() => {
+    console.error(`[connector] Forced shutdown after 5s timeout`);
+    process.exit(1);
+  }, 5000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+

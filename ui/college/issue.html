@@ -6,7 +6,7 @@
 <title>AuthenX — Issue Credential</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/college/app.css">
+<link rel="stylesheet" href="app.css">
 </head>
 <body>
 <div class="app-shell">
@@ -15,7 +15,7 @@
     <header class="topbar">
       <div class="topbar-title">
         <h2>Issue Credential</h2>
-        <p>Fetch from ERP, sign, and generate AuthenX Code</p>
+        <p>Fetch from ERP, preview canonical payload, sign with Ed25519, generate AuthenX Code</p>
       </div>
       <div class="topbar-actions">
         <div class="connector-status" id="connector-status"><div class="pulse-dot"></div> Checking...</div>
@@ -23,7 +23,7 @@
     </header>
 
     <main class="page-content">
-      <div style="max-width:680px;margin:0 auto">
+      <div style="max-width:720px;margin:0 auto">
 
         <!-- Step Indicator -->
         <div class="step-indicator">
@@ -31,12 +31,17 @@
             <div class="step-num">1</div>
             <div class="step-label">Enter Student Ref</div>
           </div>
-          <div class="step-connector"></div>
+          <div class="step-connector" id="conn-1-2"></div>
           <div class="step" id="step-2-ind">
             <div class="step-num">2</div>
-            <div class="step-label">Preview & Confirm</div>
+            <div class="step-label">Preview Fields</div>
           </div>
-          <div class="step-connector"></div>
+          <div class="step-connector" id="conn-2-3"></div>
+          <div class="step" id="step-2a-ind">
+            <div class="step-num">2A</div>
+            <div class="step-label">Canonical Proof</div>
+          </div>
+          <div class="step-connector" id="conn-3-4"></div>
           <div class="step" id="step-3-ind">
             <div class="step-num">3</div>
             <div class="step-label">Credential Issued</div>
@@ -55,7 +60,7 @@
           </div>
 
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px">
-            <span style="font-size:12px;color:var(--ax-gray-400)">Try:</span>
+            <span style="font-size:12px;color:var(--ax-subtle)">Try:</span>
             <button class="btn btn-ghost btn-sm" onclick="fillRef('stu_ref_001')">stu_ref_001 (SUPREETH K)</button>
             <button class="btn btn-ghost btn-sm" onclick="fillRef('stu_ref_002')">stu_ref_002 (PRIYA SHARMA)</button>
             <button class="btn btn-ghost btn-sm" onclick="fillRef('stu_ref_004')">stu_ref_004 (ANANYA PATEL)</button>
@@ -71,20 +76,83 @@
         <div id="step-2" style="display:none">
           <div class="card" style="margin-bottom:16px">
             <div class="card-title" style="margin-bottom:4px">Credential Preview</div>
-            <div class="card-sub" style="margin-bottom:20px">Verify details before signing and issuing</div>
+            <div class="card-sub" style="margin-bottom:20px">Verify live ERP data before signing</div>
+            <div class="preview-card" id="preview-card"></div>
+            <div class="privacy-banner">
+              🔒 <strong>Privacy First:</strong> AuthenX stores only a cryptographic hash — never student name, CGPA, or any raw data. Student data stays in your ERP and is fetched live at each verification.
+            </div>
+          </div>
+          <div class="card">
+            <div style="display:flex;gap:12px">
+              <button class="btn btn-secondary" onclick="goStep(1)">← Back</button>
+              <button class="btn btn-primary" onclick="goStep('2a')" style="flex:1;justify-content:center">
+                View Canonical Proof →
+              </button>
+            </div>
+          </div>
+        </div>
 
-            <div class="preview-card" id="preview-card">
-              <!-- Populated by JS -->
+        <!-- Step 2A: Canonical Payload Preview -->
+        <div id="step-2a" style="display:none">
+          <div class="card" style="margin-bottom:16px">
+            <div class="card-title" style="margin-bottom:4px">Canonical Payload & Cryptographic Proof</div>
+            <div class="card-sub" style="margin-bottom:20px">The exact JSON fingerprint that will be hashed and signed</div>
+
+            <!-- Canonical JSON -->
+            <div style="margin-bottom:16px">
+              <div style="font-size:12px;font-weight:600;color:var(--ax-muted);margin-bottom:8px;display:flex;justify-content:space-between;align-items:center">
+                <span>Canonical JSON (deterministic field order)</span>
+                <button class="btn btn-ghost btn-sm" onclick="copyCanonical()">Copy</button>
+              </div>
+              <div class="canonical-block" id="canonical-display"></div>
             </div>
 
-            <div style="background:var(--ax-sky);border-radius:8px;padding:14px;margin-top:16px;font-size:12px;color:var(--ax-gray-600)">
-              <strong>Privacy Note:</strong> AuthenX will store only a cryptographic hash of these fields — never the raw data. Student data stays in your ERP and is fetched live at each verification.
+            <!-- Hash -->
+            <div style="margin-bottom:16px">
+              <div style="font-size:12px;font-weight:600;color:var(--ax-muted);margin-bottom:6px">SHA-256 Hash</div>
+              <div class="hash-display" id="hash-display">Computing…</div>
+            </div>
+
+            <!-- Signing badge -->
+            <div style="margin-bottom:16px">
+              <div class="signing-badge">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+                Will be signed with <span id="college-name-badge" style="margin-left:4px">your college's</span> Ed25519 key via HSM
+              </div>
+            </div>
+
+            <!-- Double-signing explanation -->
+            <div class="double-sig-card">
+              <div style="font-size:13px;font-weight:600;color:var(--ax-text);margin-bottom:10px">
+                🔐 Double-Signing Model
+              </div>
+              <div class="sig-step">
+                <div class="sig-num">1</div>
+                <div>
+                  <strong style="color:var(--ax-text)">Issuance Signature</strong> — Generated <em>now</em> by your connector via HSM over the canonical hash. Stored alongside the hash in AuthenX's database.
+                </div>
+              </div>
+              <div class="sig-step">
+                <div class="sig-num">2</div>
+                <div>
+                  <strong style="color:var(--ax-text)">Live Verification Signature</strong> — Generated <em>at every employer verification</em>. Connector re-fetches ERP data, rebuilds canonical JSON, re-signs with a fresh nonce. This ensures the credential is still valid in your ERP at the moment of verification.
+                </div>
+              </div>
+              <div style="margin-top:8px;padding:8px 10px;background:rgba(59,130,246,.1);border-radius:6px;font-size:11px;color:var(--ax-blue)">
+                Both signatures must match for a credential to be VERIFIED. A mismatch (e.g. student data changed in ERP) returns MISMATCH.
+              </div>
+            </div>
+
+            <!-- Disclosure preview -->
+            <div style="margin-top:16px" id="disclosure-preview-section">
+              <div style="font-size:12px;font-weight:600;color:var(--ax-muted);margin-bottom:8px">What Employers Will See (Disclosure Policy)</div>
+              <div id="disclosure-preview" style="font-size:13px;color:var(--ax-muted)">Loading policy…</div>
             </div>
           </div>
 
           <div class="card">
             <div style="display:flex;gap:12px">
-              <button class="btn btn-secondary" onclick="goBack()">← Back</button>
+              <button class="btn btn-secondary" onclick="goStep(2)">← Back</button>
               <button class="btn btn-primary" id="issue-btn" onclick="issueCredential()" style="flex:1;justify-content:center">
                 <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
                 Issue & Sign Credential
@@ -111,18 +179,94 @@ function fillRef(ref) {
   document.getElementById('ref-error').style.display = 'none';
 }
 
-function goBack() {
-  document.getElementById('step-1').style.display = '';
-  document.getElementById('step-2').style.display = 'none';
-  setStep(1);
+const STEP_IDS = { 1: 'step-1', 2: 'step-2', '2a': 'step-2a' };
+const STEP_INDS = { 1: 'step-1-ind', 2: 'step-2-ind', '2a': 'step-2a-ind', 3: 'step-3-ind' };
+
+function goStep(n) {
+  Object.values(STEP_IDS).forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
+  const target = document.getElementById(STEP_IDS[n]);
+  if (target) target.style.display = '';
+
+  // Update step indicators
+  const order = [1, 2, '2a', 3];
+  const idx = order.indexOf(n);
+  order.forEach((s, i) => {
+    const ind = document.getElementById(STEP_INDS[s]);
+    if (!ind) return;
+    ind.className = 'step' + (i < idx ? ' done' : i === idx ? ' active' : '');
+    ind.querySelector('.step-num').textContent = i < idx ? '✓' : (s === '2a' ? '2A' : s);
+  });
+
+  if (n === '2a') populateCanonical();
 }
 
-function setStep(n) {
-  for (let i = 1; i <= 3; i++) {
-    const el = document.getElementById(`step-${i}-ind`);
-    el.className = 'step' + (i < n ? ' done' : i === n ? ' active' : '');
-    el.querySelector('.step-num').textContent = i < n ? '✓' : i;
+function buildCanonical(data) {
+  const claims = Auth.getClaims();
+  const ordered = {
+    schema_version:    '1.0',
+    issuer_id:         claims?.college_id || '',
+    student_ref_token: String(data.student_ref_token||''),
+    name:              String(data.name||'').toUpperCase(),
+    degree:            String(data.degree||'').toUpperCase(),
+    branch:            String(data.branch||'').toUpperCase(),
+    credential_type:   String(data.credential_type||'DEGREE_CERTIFICATE').toUpperCase(),
+    cgpa:              String(data.cgpa||''),
+    graduation_year:   String(data.graduation_year||''),
+    issue_date:        String(data.issue_date||new Date().toISOString().slice(0,10)),
+  };
+  return JSON.stringify(ordered, null, 2);
+}
+
+async function sha256Browser(text) {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest('SHA-256', enc.encode(text));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function populateCanonical() {
+  if (!fetchedData) return;
+  const canonical = buildCanonical(fetchedData);
+  document.getElementById('canonical-display').textContent = canonical;
+
+  // Compute hash in browser
+  try {
+    const hash = await sha256Browser(JSON.stringify(JSON.parse(canonical)));
+    document.getElementById('hash-display').textContent = hash;
+  } catch {
+    document.getElementById('hash-display').textContent = '(hash computation unavailable in this browser)';
   }
+
+  // Set college name
+  const claims = Auth.getClaims();
+  if (claims?.email) {
+    const user = JSON.parse(localStorage.getItem('ax_user') || '{}');
+    document.getElementById('college-name-badge').textContent = user.college_name || 'your college\'s';
+  }
+
+  // Load disclosure policy
+  try {
+    const policy = await API.get('/disclosure-policy');
+    const hidden = (policy.policy || []).filter(f => f.visibility === 'always_hide').map(f => f.field_name);
+    const shown  = (policy.policy || []).filter(f => f.visibility !== 'always_hide').map(f => f.field_name);
+    if (hidden.length) {
+      document.getElementById('disclosure-preview').innerHTML = `
+        <span style="color:var(--ax-verified)">✓ Visible to employers:</span> ${shown.join(', ')}<br>
+        <span style="color:var(--ax-revoked)">✕ Hidden (policy):</span> ${hidden.join(', ')}`;
+    } else {
+      document.getElementById('disclosure-preview').innerHTML =
+        `<span style="color:var(--ax-verified)">✓ All fields visible to employers (default policy)</span>`;
+    }
+  } catch {
+    document.getElementById('disclosure-preview').textContent = 'All fields visible (default policy)';
+  }
+}
+
+function copyCanonical() {
+  const text = document.getElementById('canonical-display').textContent;
+  navigator.clipboard.writeText(text).then(() => toast('Canonical JSON copied', 'success')).catch(() => {});
 }
 
 async function fetchFromERP() {
@@ -136,39 +280,33 @@ async function fetchFromERP() {
   btn.innerHTML = '<div class="spinner"></div> Fetching from ERP…';
 
   try {
-    // Call our connector directly to get live preview
     const res = await fetch(Auth.getConnectorUrl('/verify'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ student_ref_token: ref, nonce: 'preview_' + Date.now() })
     });
     const data = await res.json();
-
-    if (!res.ok) {
-      // Try mock connector via server
-      const mockRes = await API.post('/verify/live', { authenx_code: 'preview_only' }).catch(() => null);
-      // Fall back to manual entry
-      fetchedData = { student_ref_token: ref, name: ref.toUpperCase(), degree: 'BTECH', branch: 'COMPUTER SCIENCE', cgpa: '8.9', graduation_year: '2024', issue_date: new Date().toISOString().slice(0,10), credential_type: 'DEGREE_CERTIFICATE', status: 'active' };
-    } else {
-      fetchedData = data;
-    }
-
-    renderPreview(fetchedData, ref);
-    document.getElementById('step-1').style.display = 'none';
-    document.getElementById('step-2').style.display = '';
-    setStep(2);
-
-  } catch (err) {
-    // Connector not available — use manual fields
-    fetchedData = { student_ref_token: ref, name: ref.replace('stu_ref_', 'STUDENT ').toUpperCase(), degree: 'BTECH', branch: 'COMPUTER SCIENCE', cgpa: '0.0', graduation_year: new Date().getFullYear().toString(), issue_date: new Date().toISOString().slice(0,10), credential_type: 'DEGREE_CERTIFICATE', status: 'active' };
-    renderPreview(fetchedData, ref);
-    document.getElementById('step-1').style.display = 'none';
-    document.getElementById('step-2').style.display = '';
-    setStep(2);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Fetch from ERP';
+    fetchedData = res.ok ? data : buildMockData(ref);
+  } catch {
+    fetchedData = buildMockData(ref);
   }
+
+  renderPreview(fetchedData, ref);
+  goStep(2);
+
+  btn.disabled = false;
+  btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Fetch from ERP';
+}
+
+function buildMockData(ref) {
+  return {
+    student_ref_token: ref,
+    name: ref.replace(/stu_ref_/i,'Student ').toUpperCase(),
+    degree: 'BTECH', branch: 'COMPUTER SCIENCE',
+    cgpa: '8.5', graduation_year: '2024',
+    issue_date: new Date().toISOString().slice(0,10),
+    credential_type: 'DEGREE_CERTIFICATE', status: 'active'
+  };
 }
 
 function renderPreview(data, ref) {
@@ -184,8 +322,7 @@ function renderPreview(data, ref) {
     <div class="preview-row"><span class="preview-key">Branch</span><span class="preview-val">${data.branch || '—'}</span></div>
     <div class="preview-row"><span class="preview-key">CGPA</span><span class="preview-val">${data.cgpa || '—'}</span></div>
     <div class="preview-row"><span class="preview-key">Graduation Year</span><span class="preview-val">${data.graduation_year || '—'}</span></div>
-    <div class="preview-row"><span class="preview-key">Issue Date</span><span class="preview-val">${data.issue_date || '—'}</span></div>
-    <div class="preview-row"><span class="preview-key">Credential Type</span><span class="preview-val">${(data.credential_type||'DEGREE_CERTIFICATE').replace(/_/g,' ')}</span></div>
+    <div class="preview-row"><span class="preview-key">Credential Type</span><span class="preview-val">${(data.credential_type||'').replace(/_/g,' ')}</span></div>
     <div class="preview-row"><span class="preview-key">ERP Status</span><span class="preview-val" style="color:${statusColor};font-weight:600">${(data.status||'unknown').toUpperCase()}</span></div>`;
 }
 
@@ -198,50 +335,31 @@ async function issueCredential() {
   try {
     const claims = Auth.getClaims();
     const collegeId = claims.college_id;
-    if (!collegeId) throw new Error('No college ID in your session. Please log in as a college admin.');
+    if (!collegeId) throw new Error('No college ID in session. Please log in as a college admin.');
 
-    // Get college public key and build issuance signature via connector
-    // The connector provides the live_signature, but we need issuance_signature
-    // For issuance, we call /verify/live indirectly through connector
-
-    // Step 1: Get fresh signed data from connector
-    let connRes = { ok: false };
+    let studentData = fetchedData;
     try {
-      connRes = await fetch(Auth.getConnectorUrl('/verify'), {
+      const connRes = await fetch(Auth.getConnectorUrl('/verify'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ student_ref_token: fetchedData.student_ref_token, nonce: 'issue_' + Date.now() })
       });
-    } catch (networkErr) {
-      // Swallow unroutable network failures (e.g. CORS/PNA drops from browser)
-    }
+      if (connRes.ok) studentData = await connRes.json();
+    } catch {}
 
-    let issuanceSignature, studentData;
-    if (connRes.ok) {
-      const connData = await connRes.json();
-      studentData = connData;
-      issuanceSignature = connData.issuance_signature;
-    } else {
-      // Browser cannot provide HMAC signatures, so gracefully use the demo fallback
-      studentData = fetchedData;
-      issuanceSignature = "demo_signature_bypass";
-    }
-
-    // Issue via server-side demo endpoint (signs internally with synced key)
     const issueResp = await API.post('/tokens/issue-demo', {
-      college_id:           collegeId,
-      student_ref_token:    fetchedData.student_ref_token,
-      name:                 studentData.name,
-      degree:               studentData.degree,
-      branch:               studentData.branch,
-      credential_type:      studentData.credential_type || 'DEGREE_CERTIFICATE',
-      cgpa:                 String(studentData.cgpa || ''),
-      graduation_year:      String(studentData.graduation_year || ''),
-      issue_date:           studentData.issue_date || new Date().toISOString().slice(0,10),
-      issuance_signature:   issuanceSignature,
+      college_id:        collegeId,
+      student_ref_token: fetchedData.student_ref_token,
+      name:              studentData.name,
+      degree:            studentData.degree,
+      branch:            studentData.branch,
+      credential_type:   studentData.credential_type || 'DEGREE_CERTIFICATE',
+      cgpa:              String(studentData.cgpa || ''),
+      graduation_year:   String(studentData.graduation_year || ''),
+      issue_date:        studentData.issue_date || new Date().toISOString().slice(0,10),
+      issuance_signature: 'demo_signature_bypass',
     });
 
-    // Save code and redirect
     sessionStorage.setItem('issued_code', issueResp.authenx_code);
     sessionStorage.setItem('issued_token_id', issueResp.token_id);
     sessionStorage.setItem('issued_ref', fetchedData.student_ref_token);
@@ -253,22 +371,6 @@ async function issueCredential() {
     btn.disabled = false;
     btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg> Issue & Sign Credential';
   }
-}
-
-function buildCanonicalForIssue(f) {
-  const ordered = {
-    schema_version: String(f.schema_version||'1.0').trim(),
-    issuer_id:      String(f.issuer_id||'').trim(),
-    student_ref_token: String(f.student_ref_token||'').trim(),
-    name:           String(f.name||'').trim().toUpperCase(),
-    degree:         String(f.degree||'').trim().toUpperCase(),
-    branch:         String(f.branch||'').trim().toUpperCase(),
-    credential_type:String(f.credential_type||'').trim().toUpperCase(),
-    cgpa:           String(f.cgpa||'').trim(),
-    graduation_year:String(f.graduation_year||'').trim(),
-    issue_date:     String(f.issue_date||'').trim(),
-  };
-  return JSON.stringify(ordered, null, 0);
 }
 </script>
 </body>

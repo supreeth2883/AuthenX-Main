@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(node:*)",
+      "Bash(grep -l 'app.css\\\\|app.js' *.html)",
+      "Bash(grep -h 'src.*app.js' *.html)"
+    ]
+  }
+}

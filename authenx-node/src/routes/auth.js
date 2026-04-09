@@ -1,7 +1,7 @@
 'use strict';
 const crypto = require('node:crypto');
 const { queryOne, query, run } = require('../db/client.js');
-const { verifyPassword, signJwt, generateRefreshToken, hashRefreshToken, encryptCode, decryptCode } = require('../crypto/index.js');
+const { verifyPassword, signJwt, generateRefreshToken, hashRefreshToken, encryptCode, decryptCode, hashPassword } = require('../crypto/index.js');
 const { sanitizeObject, isValidEmail } = require('../middleware/validation.js');
 const { logSecurity } = require('../middleware/logger.js');
 const { generateSecret, verifyTOTP, generateOtpAuthUri, generateBackupCodes } = require('../middleware/totp.js');
@@ -134,7 +134,8 @@ async function login(req, res, body) {
     token,
     refresh_token: rawRefreshToken,
     expires_in: 900, // 15 minutes
-    user: { id: user.id, email: user.email, role: user.role, college_id: user.college_id }
+    user: { id: user.id, email: user.email, role: user.role, college_id: user.college_id },
+    must_change_password: user.must_change_password === 1,
   }));
 }
 
@@ -200,6 +201,63 @@ function logout(req, res, body) {
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ message: 'Logged out successfully' }));
+}
+
+/**
+ * POST /v1/auth/change-password
+ * Body: { current_password, new_password }
+ * Requires authentication. Changes user's password.
+ */
+async function changePassword(req, res, body) {
+  const { requireAuth } = require('../middleware/auth.js');
+  const claims = requireAuth(req, res);
+  if (!claims) return;
+
+  body = sanitizeObject(body);
+  const { current_password, new_password } = body;
+  const ip = req.socket.remoteAddress || 'unknown';
+
+  if (!current_password || !new_password) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'current_password and new_password are required' }));
+  }
+
+  // Password strength validation
+  if (new_password.length < 12) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'Password must be at least 12 characters long' }));
+  }
+  if (!/[A-Z]/.test(new_password) || !/[a-z]/.test(new_password) || !/[0-9]/.test(new_password) || !/[!@#$%^&*(),.?":{}|<>]/.test(new_password)) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'Password must contain uppercase, lowercase, number, and special character' }));
+  }
+
+  const user = queryOne('SELECT * FROM users WHERE id = ?', [claims.user_id]);
+  if (!user) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'User not found' }));
+  }
+
+  // Verify current password
+  const isValid = await verifyPassword(current_password, user.password_hash);
+  if (!isValid) {
+    logSecurityEvent('password_change_failed', { actorId: user.id, actorEmail: user.email, ip, details: 'Invalid current password' });
+    res.writeHead(401, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'Current password is incorrect' }));
+  }
+
+  // Hash and store new password
+  const newHash = await hashPassword(new_password);
+  run('UPDATE users SET password_hash = ?, must_change_password = 0, last_password_change = datetime(\'now\') WHERE id = ?',
+    [newHash, user.id]);
+
+  // Revoke all existing refresh tokens (force re-login on other devices)
+  run('UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?', [user.id]);
+
+  logSecurityEvent('password_changed', { actorId: user.id, actorEmail: user.email, ip });
+
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ message: 'Password changed successfully. Please login again.' }));
 }
 
 /**
@@ -349,4 +407,4 @@ function confirmMfaSetup(req, res, body) {
   res.end(JSON.stringify({ message: 'MFA enabled', backup_codes: backupCodes }));
 }
 
-module.exports = { login, refreshAuth, logout, logSecurityEvent, verifyMfaLogin, enrollMfa, confirmMfaSetup };
+module.exports = { login, refreshAuth, logout, logSecurityEvent, verifyMfaLogin, enrollMfa, confirmMfaSetup, changePassword };

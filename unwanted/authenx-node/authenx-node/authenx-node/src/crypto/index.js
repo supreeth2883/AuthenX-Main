@@ -9,6 +9,38 @@
  */
 
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+
+// ─── Secrets Management ───────────────────────────────────────────────────────
+function getSecrets() {
+  if (process.env.NODE_ENV === 'production') {
+    if (!process.env.AES_KEY_HEX || !process.env.JWT_SECRET) {
+      throw new Error('FATAL: AES_KEY_HEX and JWT_SECRET must be set in production');
+    }
+    return {
+      AES_KEY_HEX: process.env.AES_KEY_HEX,
+      JWT_SECRET: process.env.JWT_SECRET
+    };
+  }
+
+  const secretsPath = path.join(__dirname, '../../.secrets.json');
+  let secrets = {};
+  if (fs.existsSync(secretsPath)) {
+    try { secrets = JSON.parse(fs.readFileSync(secretsPath, 'utf8')); } catch {}
+  }
+
+  const AES_KEY_HEX = process.env.AES_KEY_HEX || secrets.AES_KEY_HEX || crypto.randomBytes(32).toString('hex');
+  const JWT_SECRET = process.env.JWT_SECRET || secrets.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+
+  if (!secrets.AES_KEY_HEX || !secrets.JWT_SECRET) {
+    fs.writeFileSync(secretsPath, JSON.stringify({ AES_KEY_HEX, JWT_SECRET, generated: new Date().toISOString() }, null, 2));
+  }
+
+  return { AES_KEY_HEX, JWT_SECRET };
+}
+
+const SECRETS = getSecrets();
 
 // ─── Canonical Fingerprint ────────────────────────────────────────────────────
 /**
@@ -93,10 +125,7 @@ function verifyEd25519(message, signatureBase64, publicKeyHex) {
 }
 
 // ─── AES-256-GCM (AuthenX Code) ───────────────────────────────────────────────
-const AES_KEY = Buffer.from(
-  process.env.AES_KEY_HEX || crypto.randomBytes(32).toString('hex'),
-  'hex'
-);
+const AES_KEY = Buffer.from(SECRETS.AES_KEY_HEX, 'hex');
 
 /** Encrypt a JS object into an AuthenX Code string (base64url) */
 function encryptCode(payload) {
@@ -129,7 +158,7 @@ function generateNonce() {
 }
 
 // ─── JWT (built-in, no jsonwebtoken pkg) ─────────────────────────────────────
-const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+const JWT_SECRET = SECRETS.JWT_SECRET;
 
 function base64urlEncode(buf) {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
@@ -200,4 +229,5 @@ module.exports = {
   verifyJwt,
   hashPassword,
   verifyPassword,
+  getSecrets,
 };

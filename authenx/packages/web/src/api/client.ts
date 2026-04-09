@@ -7,7 +7,7 @@
 
 import axios from 'axios';
 
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3001';
+const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000';
 
 export const api = axios.create({
   baseURL: `${API_BASE}/v1`,
@@ -52,8 +52,8 @@ export const verifyApi = {
   decodeCode: (authenxCode: string) =>
     api.post('/verify/code', { authenx_code: authenxCode }),
 
-  liveVerify: (tokenId: string) =>
-    api.post('/verify/live', { token_id: tokenId }),
+  liveVerify: (authenxCode: string) =>
+    api.post('/verify/live', { authenx_code: authenxCode }),
 };
 
 // ─── Types ────────────────────────────────────────────────────────────────────

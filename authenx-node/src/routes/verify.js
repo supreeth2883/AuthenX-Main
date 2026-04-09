@@ -224,6 +224,15 @@ async function liveVerify(req, res, body) {
     [crypto.randomUUID(), token.id, claims.email, result,
      hashMatch ? 1 : 0, (isSigValid && liveSigValid) ? 1 : 0, latency, nonce]);
 
+  // Update token verification stats
+  try {
+    run(`UPDATE verification_tokens
+         SET verification_count = verification_count + 1,
+             last_verified_at   = datetime('now'),
+             last_result        = ?
+         WHERE id = ?`, [result, token.id]);
+  } catch {} // Non-critical; new columns may not exist on older DBs
+
   const responseBody = {
     result,
     college:       token.college_name,

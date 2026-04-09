@@ -6,7 +6,7 @@
 <title>AuthenX — Credential Issued</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/college/app.css">
+<link rel="stylesheet" href="app.css">
 <script src="/shared/authenx-code.js"></script>
 </head>
 <body>
@@ -73,7 +73,7 @@
             <div id="axcode-container" style="display:flex;justify-content:center">
               <canvas id="axcode-canvas" style="max-width:100%;height:auto"></canvas>
             </div>
-            <div style="font-size:11px;color:var(--ax-gray-400);text-align:center;margin-top:12px">Scan with AuthenX Verifier only</div>
+            <div style="font-size:11px;color:var(--ax-subtle);text-align:center;margin-top:12px">Scan with AuthenX Verifier only</div>
             <button class="btn btn-secondary" onclick="downloadPNG()" style="width:100%;margin-top:10px;justify-content:center">
               <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
               Download PNG
@@ -85,23 +85,23 @@
             <div class="card-title" style="margin-bottom:16px">Token Details</div>
             <div style="display:flex;flex-direction:column;gap:10px">
               <div>
-                <div style="font-size:11px;color:var(--ax-gray-400);text-transform:uppercase;letter-spacing:0.5px">Student Ref</div>
-                <div style="font-family:monospace;font-size:13px;color:var(--ax-gray-900);font-weight:600" id="detail-ref">—</div>
+                <div style="font-size:11px;color:var(--ax-subtle);text-transform:uppercase;letter-spacing:0.5px">Student Ref</div>
+                <div style="font-family:monospace;font-size:13px;color:var(--ax-text);font-weight:600" id="detail-ref">—</div>
               </div>
               <div>
-                <div style="font-size:11px;color:var(--ax-gray-400);text-transform:uppercase;letter-spacing:0.5px">Student Name</div>
-                <div style="font-size:13px;color:var(--ax-gray-900);font-weight:600" id="detail-name">—</div>
+                <div style="font-size:11px;color:var(--ax-subtle);text-transform:uppercase;letter-spacing:0.5px">Student Name</div>
+                <div style="font-size:13px;color:var(--ax-text);font-weight:600" id="detail-name">—</div>
               </div>
               <div>
-                <div style="font-size:11px;color:var(--ax-gray-400);text-transform:uppercase;letter-spacing:0.5px">Token ID</div>
-                <div style="font-family:monospace;font-size:11px;color:var(--ax-gray-500)" id="detail-token-id">—</div>
+                <div style="font-size:11px;color:var(--ax-subtle);text-transform:uppercase;letter-spacing:0.5px">Token ID</div>
+                <div style="font-family:monospace;font-size:11px;color:var(--ax-muted)" id="detail-token-id">—</div>
               </div>
               <div>
-                <div style="font-size:11px;color:var(--ax-gray-400);text-transform:uppercase;letter-spacing:0.5px">Issued At</div>
-                <div style="font-size:12px;color:var(--ax-gray-700)" id="detail-issued-at">—</div>
+                <div style="font-size:11px;color:var(--ax-subtle);text-transform:uppercase;letter-spacing:0.5px">Issued At</div>
+                <div style="font-size:12px;color:var(--ax-text)" id="detail-issued-at">—</div>
               </div>
               <div>
-                <div style="font-size:11px;color:var(--ax-gray-400);text-transform:uppercase;letter-spacing:0.5px">Status</div>
+                <div style="font-size:11px;color:var(--ax-subtle);text-transform:uppercase;letter-spacing:0.5px">Status</div>
                 <span class="badge badge-active">● Active</span>
               </div>
             </div>
@@ -149,7 +149,7 @@ if (code) {
   try {
     AuthenXCode.render(document.getElementById('axcode-canvas'), code);
   } catch(e) {
-    document.getElementById('axcode-container').innerHTML = '<div style="color:var(--ax-gray-400);font-size:13px;padding:20px;text-align:center">Visual code generation failed<br>Copy the text code instead</div>';
+    document.getElementById('axcode-container').innerHTML = '<div style="color:var(--ax-subtle);font-size:13px;padding:20px;text-align:center">Visual code generation failed<br>Copy the text code instead</div>';
     console.error('AuthenX Code render error:', e);
   }
 }

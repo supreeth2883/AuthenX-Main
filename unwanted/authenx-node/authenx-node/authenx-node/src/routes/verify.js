@@ -1,5 +1,6 @@
 'use strict';
 const crypto = require('node:crypto');
+const { createHash, createHmac } = require('node:crypto');
 const { queryOne, run } = require('../db/client.js');
 const { requireAuth } = require('../middleware/auth.js');
 const {
@@ -212,7 +213,14 @@ async function callConnector(connectorUrl, payload) {
 
   // Real HTTP connector call
   const url = new URL('/verify', connectorUrl);
-  const body = JSON.stringify(payload);
+  const { shared_secret, ...connectorPayload } = payload;
+  const body = JSON.stringify(connectorPayload);
+  const timestamp = String(Math.floor(Date.now() / 1000));
+  const bodyHash = createHash('sha256').update(body).digest('hex');
+  const message = `POST:${url.pathname}:${timestamp}:${bodyHash}`;
+  const signature = shared_secret
+    ? createHmac('sha256', Buffer.from(shared_secret, 'hex')).update(message).digest('hex')
+    : '';
 
   return new Promise((resolve, reject) => {
     const mod = url.protocol === 'https:' ? require('node:https') : require('node:http');
@@ -221,14 +229,26 @@ async function callConnector(connectorUrl, payload) {
       port: url.port || (url.protocol === 'https:' ? 443 : 80),
       path: url.pathname,
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+        'X-AuthenX-Timestamp': timestamp,
+        'X-AuthenX-Signature': signature,
+      },
     };
     const request = mod.request(reqOpts, (response) => {
       let data = '';
       response.on('data', (chunk) => data += chunk);
       response.on('end', () => {
-        try { resolve(JSON.parse(data)); }
-        catch { reject(new Error('Invalid JSON from connector')); }
+        let parsed;
+        try { parsed = JSON.parse(data); }
+        catch { return reject(new Error('Invalid JSON from connector')); }
+
+        if (response.statusCode < 200 || response.statusCode >= 300) {
+          return reject(new Error(parsed.error || `Connector HTTP ${response.statusCode}`));
+        }
+
+        resolve(parsed);
       });
     });
     request.on('error', reject);

@@ -16,6 +16,7 @@
  */
 
 const { createServer } = require('node:http');
+const crypto = require('node:crypto');
 const keyStore = require('./key-store.js');
 
 const PORT = process.env.HSM_PORT || 9099;
@@ -46,8 +47,15 @@ function readBody(req) {
 
 // ─── Request handler ──────────────────────────────────────────────────────────
 const server = createServer(async (req, res) => {
+  // Generate request ID for tracing
+  const requestId = crypto.randomUUID();
+  res.setHeader('X-Request-ID', requestId);
+
   res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  // HSM is localhost-only, so CORS should also be restricted
+  res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,X-Request-ID');
   if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
 
   // Restrict to localhost
@@ -127,3 +135,28 @@ console.log(`   Access: localhost only\n`);
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`   ✅ HSM online → http://127.0.0.1:${PORT}`);
 });
+
+// ─── Graceful Shutdown ────────────────────────────────────────────────────────
+let isShuttingDown = false;
+
+function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`\n🛑 ${signal} received - shutting down HSM...`);
+
+  server.close(() => {
+    console.log('✅ HSM shutdown complete');
+    process.exit(0);
+  });
+
+  // Force close after 5 seconds
+  setTimeout(() => {
+    console.error('⚠️  Forced HSM shutdown after 5s timeout');
+    process.exit(1);
+  }, 5000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+

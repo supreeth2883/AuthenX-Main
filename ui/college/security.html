@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Security Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-mount"></div>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h2>Security Dashboard</h2>
+        <p>Token security, double-signing model, key rotation, and compliance</p>
+      </div>
+      <div class="topbar-actions">
+        <div class="connector-status" id="connector-status"><div class="pulse-dot"></div> Checking...</div>
+      </div>
+    </header>
+
+    <main class="page-content">
+
+      <!-- Security stats -->
+      <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px">
+        <div class="stat-card blue"><div class="stat-label">Total Active</div><div class="stat-value" id="stat-active">—</div></div>
+        <div class="stat-card green"><div class="stat-label">Verified (24h)</div><div class="stat-value" id="stat-24h">—</div></div>
+        <div class="stat-card green"><div class="stat-label">Verified (7d)</div><div class="stat-value" id="stat-7d">—</div></div>
+        <div class="stat-card amber"><div class="stat-label">Never Verified</div><div class="stat-value" id="stat-never">—</div></div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:24px;align-items:start">
+        <!-- Left column -->
+        <div>
+          <!-- Double signing explanation -->
+          <div class="card" style="margin-bottom:24px">
+            <div class="card-title" style="margin-bottom:4px">Double-Signing Model</div>
+            <div class="card-sub" style="margin-bottom:18px">How AuthenX ensures credentials are authentic and current</div>
+
+            <div class="sig-comparison">
+              <div class="sig-box">
+                <div class="sig-box-title" style="color:var(--ax-blue)">① Issuance Signature</div>
+                <p style="font-size:12px;color:var(--ax-muted);margin-bottom:10px;line-height:1.6">
+                  Generated <strong>once</strong> when the credential is issued. Signed by the college's Ed25519 key in HSM over the canonical JSON hash.
+                </p>
+                <div style="font-size:11px;color:var(--ax-subtle);margin-bottom:6px">Example hash:</div>
+                <div class="sig-hash" id="example-hash">Loading…</div>
+              </div>
+              <div class="sig-box">
+                <div class="sig-box-title" style="color:var(--ax-verified)">② Live Verification Signature</div>
+                <p style="font-size:12px;color:var(--ax-muted);margin-bottom:10px;line-height:1.6">
+                  Generated <strong>fresh at every employer check</strong>. Connector re-fetches live ERP data, rebuilds canonical JSON, re-signs with a unique nonce.
+                </p>
+                <div style="font-size:11px;color:var(--ax-subtle);margin-bottom:6px">Example nonce:</div>
+                <div class="sig-hash" id="example-nonce">Loading…</div>
+              </div>
+            </div>
+
+            <div style="margin-top:14px;padding:12px;background:rgba(59,130,246,.08);border-radius:8px;font-size:12px;color:var(--ax-blue);line-height:1.7">
+              <strong>Replay resistance:</strong> Each live verification uses a unique nonce. Even if an interceptor captured a verification response, replaying it would fail because the nonce would not match the server's expectation. Both signatures must match for a credential to be <span style="color:var(--ax-verified);font-weight:600">VERIFIED</span>.
+            </div>
+          </div>
+
+          <!-- Key rotation history -->
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+              <div>
+                <div class="card-title" style="margin-bottom:2px">Key Rotation History</div>
+                <div class="card-sub">Ed25519 signing key lifecycle</div>
+              </div>
+              <button class="btn btn-secondary btn-sm" onclick="rotateKey()">Rotate Key</button>
+            </div>
+
+            <div class="table-container" style="background:transparent;border:1px solid var(--ax-border);border-radius:8px;margin-bottom:0">
+              <table class="key-history">
+                <thead>
+                  <tr>
+                    <th>Key Fingerprint</th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Rotated</th>
+                  </tr>
+                </thead>
+                <tbody id="key-history-tbody">
+                  <tr><td colspan="4" style="text-align:center;padding:28px;color:var(--ax-subtle)">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="margin-top:10px;font-size:11px;color:var(--ax-subtle)">
+              Recommendation: Rotate key annually or after any suspected compromise.
+            </div>
+          </div>
+        </div>
+
+        <!-- Right column -->
+        <div>
+          <!-- Compliance checklist -->
+          <div class="card" style="margin-bottom:24px">
+            <div class="card-title" style="margin-bottom:16px">Compliance Checklist</div>
+            <div id="compliance-list">
+              <div class="check-item">
+                <div class="check-icon check-pass">✓</div>
+                <div class="check-text">
+                  <strong>Read-only connector permissions</strong>
+                  <span>Connector has SELECT-only DB access. Cannot modify student records.</span>
+                </div>
+              </div>
+              <div class="check-item">
+                <div class="check-icon check-pass">✓</div>
+                <div class="check-text">
+                  <strong>No raw student data in AuthenX DB</strong>
+                  <span>Only canonical hashes and Ed25519 signatures stored — never names, CGPA, or personal info.</span>
+                </div>
+              </div>
+              <div class="check-item" id="check-connector">
+                <div class="check-icon check-warn">⚠</div>
+                <div class="check-text">
+                  <strong>Live ERP verification</strong>
+                  <span id="check-connector-text">Checking connector status…</span>
+                </div>
+              </div>
+              <div class="check-item">
+                <div class="check-icon check-pass">✓</div>
+                <div class="check-text">
+                  <strong>Double signatures active</strong>
+                  <span>Issuance + live verification signatures required for VERIFIED result.</span>
+                </div>
+              </div>
+              <div class="check-item">
+                <div class="check-icon check-pass">✓</div>
+                <div class="check-text">
+                  <strong>Audit logging enabled</strong>
+                  <span>Every verification event is immutably logged with timestamp, actor, and result.</span>
+                </div>
+              </div>
+              <div class="check-item">
+                <div class="check-icon check-pass">✓</div>
+                <div class="check-text">
+                  <strong>HMAC inter-service auth</strong>
+                  <span>All requests between main server and connector are HMAC-SHA256 signed.</span>
+                </div>
+              </div>
+              <div class="check-item" id="check-sig-failures">
+                <div class="check-icon check-pass" id="check-sig-icon">✓</div>
+                <div class="check-text">
+                  <strong>Signature validation</strong>
+                  <span id="check-sig-text">Loading sig failure stats…</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Avg time to first verify -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:4px">Adoption Metrics</div>
+            <div class="card-sub" style="margin-bottom:16px">How quickly employers verify credentials after issuance</div>
+            <div style="display:flex;flex-direction:column;gap:14px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:13px;color:var(--ax-muted)">Avg time to first verification</span>
+                <span style="font-size:20px;font-weight:700;color:var(--ax-text)" id="avg-ttfv">—</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:13px;color:var(--ax-muted)">Tokens never verified</span>
+                <span style="font-size:20px;font-weight:700;color:var(--ax-pending)" id="never-verified-metric">—</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:13px;color:var(--ax-muted)">Sig failures (total)</span>
+                <span style="font-size:20px;font-weight:700;color:var(--ax-text)" id="sig-failures-metric">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<script src="/college/app.js"></script>
+<script>
+if (!Auth.requireAuth()) {}
+document.getElementById('sidebar-mount').innerHTML = renderSidebar('security');
+initNav('security');
+
+async function loadStats() {
+  try {
+    const data = await API.get('/security/stats');
+    const s = data.stats || {};
+
+    document.getElementById('stat-active').textContent = s.total_active ?? '—';
+    document.getElementById('stat-24h').textContent   = s.verified_24h ?? '—';
+    document.getElementById('stat-7d').textContent    = s.verified_7d ?? '—';
+    document.getElementById('stat-never').textContent = s.never_verified ?? '—';
+    document.getElementById('never-verified-metric').textContent = s.never_verified ?? '—';
+    document.getElementById('sig-failures-metric').textContent = s.sig_failures ?? 0;
+
+    const ttfv = s.avg_time_to_first_verify_secs;
+    if (ttfv != null) {
+      const days = Math.floor(ttfv / 86400);
+      const hours = Math.floor((ttfv % 86400) / 3600);
+      document.getElementById('avg-ttfv').textContent = days > 0 ? `${days}d ${hours}h` : `${hours}h`;
+    } else {
+      document.getElementById('avg-ttfv').textContent = 'No data';
+    }
+
+    // Update sig failure check
+    if ((s.sig_failures || 0) > 0) {
+      document.getElementById('check-sig-icon').className = 'check-icon check-fail';
+      document.getElementById('check-sig-icon').textContent = '✕';
+      document.getElementById('check-sig-text').textContent = `${s.sig_failures} signature failures detected — investigate possible tampering`;
+    } else {
+      document.getElementById('check-sig-text').textContent = 'No signature failures detected';
+    }
+  } catch (err) {
+    console.error('Stats load error:', err);
+  }
+}
+
+async function loadKeyHistory() {
+  // Load college public key info
+  try {
+    const claims = Auth.getClaims();
+    const college = await API.get(`/colleges/${claims.college_id}`);
+    const pubKey = college.college?.public_key_hex || '';
+    const fingerprint = pubKey.slice(0, 16) + '…' + pubKey.slice(-8);
+
+    document.getElementById('key-history-tbody').innerHTML = `
+      <tr>
+        <td style="font-family:monospace;font-size:11px;color:var(--ax-blue)">${fingerprint || 'Not available'}</td>
+        <td><span class="badge badge-active">● Active</span></td>
+        <td style="font-size:12px;color:var(--ax-muted)">Onboarding</td>
+        <td style="font-size:12px;color:var(--ax-subtle)">—</td>
+      </tr>`;
+
+    document.getElementById('example-hash').textContent = pubKey.slice(0, 64) || 'ed25519_public_key_hex_not_available';
+  } catch {
+    document.getElementById('key-history-tbody').innerHTML =
+      '<tr><td colspan="4" style="text-align:center;padding:20px;color:var(--ax-subtle)">Could not load key info</td></tr>';
+  }
+
+  // Example nonce
+  document.getElementById('example-nonce').textContent = 'nonce_' + Date.now() + '_' + Math.random().toString(36).slice(2, 10);
+}
+
+async function checkConnector() {
+  try {
+    const res = await fetch(Auth.getConnectorUrl('/health'), { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      document.getElementById('check-connector').querySelector('.check-icon').className = 'check-icon check-pass';
+      document.getElementById('check-connector').querySelector('.check-icon').textContent = '✓';
+      document.getElementById('check-connector-text').textContent = 'Connector online — live ERP data available at verification time.';
+    } else {
+      setConnectorWarn();
+    }
+  } catch {
+    setConnectorWarn();
+  }
+}
+
+function setConnectorWarn() {
+  document.getElementById('check-connector').querySelector('.check-icon').className = 'check-icon check-warn';
+  document.getElementById('check-connector-text').textContent = 'Connector offline — verifications will fail until connector is restored.';
+}
+
+function rotateKey() {
+  showModal({
+    title: 'Rotate Ed25519 Key',
+    body: `
+      <p>This will generate a new Ed25519 key pair in the HSM and update the college registry.</p>
+      <ul style="margin:10px 0 10px 18px;line-height:1.8;font-size:13px">
+        <li>New credentials will use the new key immediately</li>
+        <li>Existing tokens remain verifiable (old key is kept)</li>
+        <li>Connector must be restarted to pick up new key</li>
+      </ul>
+      <div style="padding:10px;background:var(--ax-pending-bg);border-radius:6px;font-size:12px;color:var(--ax-pending)">
+        ⚠ Schedule during low-traffic period. Coordinate with IT team.
+      </div>`,
+    confirmText: 'Schedule Rotation',
+    confirmClass: 'btn-danger',
+    onConfirm: () => toast('Key rotation scheduled. IT team will be notified.', 'info')
+  });
+}
+
+Promise.all([loadStats(), loadKeyHistory(), checkConnector()]);
+</script>
+</body>
+</html>

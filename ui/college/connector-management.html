@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Connector Management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-mount"></div>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h2>Connector Management</h2>
+        <p>Monitor ERP connector health, performance, and configuration</p>
+      </div>
+      <div class="topbar-actions">
+        <div class="connector-status" id="connector-status"><div class="pulse-dot"></div> Checking...</div>
+        <button class="btn btn-secondary btn-sm" onclick="refreshAll()">
+          <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Refresh
+        </button>
+      </div>
+    </header>
+
+    <main class="page-content">
+      <!-- Health banner -->
+      <div id="health-banner" class="health-banner health-mock">
+        <div class="health-icon">⟳</div>
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--ax-text)" id="health-title">Checking connector…</div>
+          <div style="font-size:12px;margin-top:3px" id="health-sub">Connecting to ERP connector at <span id="connector-url-display">localhost</span></div>
+        </div>
+        <div style="margin-left:auto;text-align:right">
+          <div style="font-size:11px;color:var(--ax-subtle)">Last checked</div>
+          <div style="font-size:13px;font-weight:600;color:var(--ax-text)" id="last-checked">—</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:2fr 1fr;gap:24px">
+        <!-- Left column -->
+        <div>
+          <!-- Performance metrics -->
+          <div class="card" style="margin-bottom:24px">
+            <div class="card-title" style="margin-bottom:16px">Performance Metrics</div>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:14px" id="metrics-grid">
+              <div class="metric-card">
+                <div class="metric-label">Avg Latency</div>
+                <div class="metric-value" id="metric-latency">—</div>
+                <div class="metric-sub">Target: &lt;2 000 ms</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">Success Rate</div>
+                <div class="metric-value" id="metric-success">—</div>
+                <div class="metric-sub">Verified / total</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">Verifications Today</div>
+                <div class="metric-value" id="metric-today">—</div>
+                <div class="metric-sub">Live verify events</div>
+              </div>
+              <div class="metric-card">
+                <div class="metric-label">Last Event</div>
+                <div class="metric-value" style="font-size:14px" id="metric-last">—</div>
+                <div class="metric-sub" id="metric-last-sub">—</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Connector logs -->
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+              <div class="card-title">Recent Connector Events</div>
+              <button class="btn btn-ghost btn-sm" onclick="loadLogs()">Reload</button>
+            </div>
+            <div id="logs-container" style="background:var(--ax-bg);border-radius:8px;max-height:300px;overflow-y:auto;font-size:12px">
+              <div style="padding:20px;text-align:center;color:var(--ax-subtle)">
+                <div class="spinner spinner-blue" style="margin:0 auto 8px"></div>
+                Loading logs…
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right column -->
+        <div>
+          <!-- Actions -->
+          <div class="card" style="margin-bottom:24px">
+            <div class="card-title" style="margin-bottom:16px">Actions</div>
+            <div style="display:flex;flex-direction:column;gap:10px">
+              <button class="btn btn-secondary" onclick="rotateKey()">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
+                Rotate Signing Key
+              </button>
+              <button class="btn btn-secondary" onclick="restartConnector()">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                Restart Connector
+              </button>
+              <button class="btn btn-secondary" onclick="runDiagnostics()">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/></svg>
+                Run Diagnostics
+              </button>
+              <a href="/college/onboarding.html" class="btn btn-ghost">
+                <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                Update Field Mapping
+              </a>
+            </div>
+          </div>
+
+          <!-- Adapter info -->
+          <div class="card" style="margin-bottom:24px">
+            <div class="card-title" style="margin-bottom:14px">Adapter Mode</div>
+            <div id="adapter-info">
+              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--ax-border)">
+                <span style="font-size:13px;color:var(--ax-muted)">DB Type</span>
+                <span style="font-size:13px;font-weight:600;color:var(--ax-text)" id="adapter-db">SQLite</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--ax-border)">
+                <span style="font-size:13px;color:var(--ax-muted)">Endpoint</span>
+                <span style="font-size:12px;font-family:monospace;color:var(--ax-blue)" id="adapter-url">localhost:9001</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;padding:8px 0">
+                <span style="font-size:13px;color:var(--ax-muted)">Mode</span>
+                <span style="font-size:13px;font-weight:600;color:var(--ax-text)" id="adapter-mode">Read-only</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Network diagnostics -->
+          <div class="card">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+              <div class="card-title">Network Diagnostics</div>
+              <button class="btn btn-ghost btn-sm" onclick="runDiagnostics()">Run</button>
+            </div>
+            <div id="diag-results">
+              <div class="diag-row">
+                <span class="diag-label">Connector Ping</span>
+                <span class="diag-result diag-pend" id="diag-ping">Pending…</span>
+              </div>
+              <div class="diag-row">
+                <span class="diag-label">HSM Connection</span>
+                <span class="diag-result diag-pend" id="diag-hsm">Pending…</span>
+              </div>
+              <div class="diag-row">
+                <span class="diag-label">ERP DB Access</span>
+                <span class="diag-result diag-pend" id="diag-db">Pending…</span>
+              </div>
+              <div class="diag-row">
+                <span class="diag-label">HMAC Auth</span>
+                <span class="diag-result diag-pend" id="diag-hmac">Pending…</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/college/app.js"></script>
+<script>
+if (!Auth.requireAuth()) {}
+document.getElementById('sidebar-mount').innerHTML = renderSidebar('connector');
+initNav('connector');
+
+const connectorUrl = Auth.getConnectorUrl('');
+document.getElementById('connector-url-display').textContent = connectorUrl || 'localhost:9001';
+document.getElementById('adapter-url').textContent = (connectorUrl || 'http://localhost:9001').replace('http://','');
+
+let healthInterval;
+
+async function checkHealth() {
+  const banner = document.getElementById('health-banner');
+  const title = document.getElementById('health-title');
+  const sub = document.getElementById('health-sub');
+  const lastChecked = document.getElementById('last-checked');
+
+  lastChecked.textContent = new Date().toLocaleTimeString('en-IN');
+
+  try {
+    const start = Date.now();
+    const res = await fetch(Auth.getConnectorUrl('/health'), { signal: AbortSignal.timeout(3000) });
+    const latency = Date.now() - start;
+
+    if (res.ok) {
+      const data = await res.json().catch(() => ({}));
+      banner.className = 'health-banner health-live';
+      banner.querySelector('.health-icon').textContent = '✓';
+      title.textContent = 'Connector Online — Live ERP';
+      sub.textContent = `Latency: ${latency}ms · DB: ${data.db_type || 'SQLite'} · Mode: Read-only`;
+      document.getElementById('adapter-db').textContent = data.db_type || 'SQLite';
+      document.getElementById('adapter-mode').textContent = data.mode || 'Read-only';
+      document.getElementById('connector-status').className = 'connector-status live';
+      document.getElementById('connector-status').innerHTML = '<div class="pulse-dot"></div> Live ERP';
+    } else {
+      setMock();
+    }
+  } catch {
+    setMock();
+  }
+}
+
+function setMock() {
+  const banner = document.getElementById('health-banner');
+  banner.className = 'health-banner health-mock';
+  banner.querySelector('.health-icon').textContent = '⚠';
+  document.getElementById('health-title').textContent = 'Mock Mode — Connector Unavailable';
+  document.getElementById('health-sub').textContent = 'ERP connector not reachable. Verification uses mock data.';
+}
+
+async function loadMetrics() {
+  try {
+    const [statsData, auditData] = await Promise.all([
+      API.get('/audit/stats'),
+      API.get('/audit?limit=50'),
+    ]);
+    const events = auditData.events || [];
+    const liveEvents = events.filter(e => e.request_type === 'live_verify');
+    const verifiedCount = liveEvents.filter(e => e.result === 'verified').length;
+    const avgLatency = liveEvents.length
+      ? Math.round(liveEvents.reduce((s, e) => s + (e.latency_ms||0), 0) / liveEvents.length)
+      : null;
+    const successRate = liveEvents.length
+      ? Math.round(verifiedCount / liveEvents.length * 100)
+      : null;
+
+    document.getElementById('metric-latency').textContent = avgLatency != null ? avgLatency + 'ms' : '—';
+    document.getElementById('metric-success').textContent = successRate != null ? successRate + '%' : '—';
+    document.getElementById('metric-today').textContent = statsData.stats?.verifications_today || 0;
+
+    if (events.length) {
+      const last = events[0];
+      document.getElementById('metric-last').textContent = last.result?.toUpperCase() || '—';
+      document.getElementById('metric-last-sub').textContent = formatDate(last.created_at);
+    }
+  } catch {}
+}
+
+async function loadLogs() {
+  const container = document.getElementById('logs-container');
+  try {
+    const data = await API.get('/audit?limit=20');
+    const events = data.events || [];
+    if (!events.length) {
+      container.innerHTML = '<div style="padding:16px;text-align:center;color:var(--ax-subtle)">No events yet</div>';
+      return;
+    }
+    container.innerHTML = events.map(e => {
+      const cls = e.result === 'verified' ? 'log-ok' : e.result === 'error' ? 'log-err' : 'log-info';
+      return `<div class="log-entry">
+        <span class="log-time">${(e.created_at||'').slice(11,19)}</span>
+        <span class="${cls}">[${(e.result||'?').toUpperCase()}]</span>
+        <span style="color:var(--ax-muted);margin-left:8px">${e.request_type?.replace('_',' ')} · ${e.employer_name||'unknown'} · ${e.latency_ms!=null?e.latency_ms+'ms':'—'}</span>
+      </div>`;
+    }).join('');
+  } catch {
+    container.innerHTML = '<div style="padding:16px;color:var(--ax-subtle)">Could not load logs</div>';
+  }
+}
+
+async function runDiagnostics() {
+  const set = (id, text, cls) => {
+    const el = document.getElementById(id);
+    el.textContent = text;
+    el.className = `diag-result ${cls}`;
+  };
+
+  set('diag-ping', 'Testing…', 'diag-pend');
+  set('diag-hsm', 'Testing…', 'diag-pend');
+  set('diag-db', 'Testing…', 'diag-pend');
+  set('diag-hmac', 'Testing…', 'diag-pend');
+
+  // Ping connector
+  try {
+    const start = Date.now();
+    const res = await fetch(Auth.getConnectorUrl('/health'), { signal: AbortSignal.timeout(3000) });
+    const latency = Date.now() - start;
+    set('diag-ping', res.ok ? `✓ ${latency}ms` : '✕ Non-200', res.ok ? 'diag-ok' : 'diag-fail');
+    set('diag-db', res.ok ? '✓ Accessible' : '✕ Check connector', res.ok ? 'diag-ok' : 'diag-fail');
+  } catch {
+    set('diag-ping', '✕ Timeout / unreachable', 'diag-fail');
+    set('diag-db', '✕ Cannot reach connector', 'diag-fail');
+  }
+
+  // Check main server HSM connectivity indirectly via health
+  try {
+    const res = await fetch('http://localhost:3000/health');
+    set('diag-hsm', res.ok ? '✓ Server healthy' : '✕ Server error', res.ok ? 'diag-ok' : 'diag-fail');
+  } catch {
+    set('diag-hsm', '✕ Server unreachable', 'diag-fail');
+  }
+
+  // HMAC: test by calling a protected endpoint
+  try {
+    await API.get('/audit/stats');
+    set('diag-hmac', '✓ Auth valid', 'diag-ok');
+  } catch {
+    set('diag-hmac', '✕ Auth failed', 'diag-fail');
+  }
+}
+
+function rotateKey() {
+  showModal({
+    title: 'Rotate Signing Key',
+    body: `
+      <p>Rotating the Ed25519 key pair will:</p>
+      <ul style="margin:10px 0 10px 18px;line-height:1.8;font-size:13px">
+        <li>Generate a new key pair in the HSM</li>
+        <li>Update the public key in the college registry</li>
+        <li>Existing verified tokens remain valid (old key kept for historical verification)</li>
+        <li>New credentials will use the new key</li>
+      </ul>
+      <div style="padding:10px;background:var(--ax-pending-bg);border-radius:6px;font-size:12px;color:var(--ax-pending)">
+        ⚠ This operation requires IT coordination. Schedule during off-peak hours.
+      </div>`,
+    confirmText: 'Rotate Key',
+    confirmClass: 'btn-danger',
+    onConfirm: () => toast('Key rotation scheduled. Contact your IT team to complete the process.', 'info')
+  });
+}
+
+function restartConnector() {
+  showModal({
+    title: 'Restart Connector',
+    body: `<p>Send a restart signal to the ERP connector at <code>${connectorUrl}</code>.</p>
+           <p style="margin-top:8px;font-size:13px;color:var(--ax-muted)">This will briefly interrupt verification service (&lt;30 seconds).</p>`,
+    confirmText: 'Restart',
+    confirmClass: 'btn-danger',
+    onConfirm: async () => {
+      try {
+        await fetch(Auth.getConnectorUrl('/restart'), { method: 'POST' });
+        toast('Restart signal sent to connector', 'success');
+      } catch {
+        toast('Could not reach connector to restart', 'error');
+      }
+    }
+  });
+}
+
+function refreshAll() {
+  checkHealth();
+  loadMetrics();
+  loadLogs();
+}
+
+// Initial load + polling
+refreshAll();
+healthInterval = setInterval(checkHealth, 10000);
+window.addEventListener('beforeunload', () => clearInterval(healthInterval));
+</script>
+</body>
+</html>

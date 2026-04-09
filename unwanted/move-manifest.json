@@ -1,0 +1,317 @@
+{
+  "generated": "2026-04-08T00:00:00.000Z",
+  "project": "AuthenX-Main",
+  "total_moved": 44,
+  "rollback_instructions": "For each entry: mv 'new_path' 'original_path' from the repo root. Example: mv unwanted/demo_test.js demo_test.js",
+  "moves": [
+    {
+      "original_path": "01_login.png",
+      "new_path": "unwanted/01_login.png",
+      "reason": "App screenshot artifact — not served by server (SPA is embedded in server.js), not referenced in Dockerfile or any code",
+      "confidence": 0.90,
+      "category": "screenshot"
+    },
+    {
+      "original_path": "02_dashboard.png",
+      "new_path": "unwanted/02_dashboard.png",
+      "reason": "App screenshot artifact — not served by server, not referenced in any code",
+      "confidence": 0.90,
+      "category": "screenshot"
+    },
+    {
+      "original_path": "03_colleges.png",
+      "new_path": "unwanted/03_colleges.png",
+      "reason": "App screenshot artifact — not served by server, not referenced in any code",
+      "confidence": 0.90,
+      "category": "screenshot"
+    },
+    {
+      "original_path": "04_issue_credential.png",
+      "new_path": "unwanted/04_issue_credential.png",
+      "reason": "App screenshot artifact — not served by server, not referenced in any code",
+      "confidence": 0.90,
+      "category": "screenshot"
+    },
+    {
+      "original_path": "05_authenx_code.png",
+      "new_path": "unwanted/05_authenx_code.png",
+      "reason": "App screenshot artifact — not served by server, not referenced in any code",
+      "confidence": 0.90,
+      "category": "screenshot"
+    },
+    {
+      "original_path": "06_verify_verified.png",
+      "new_path": "unwanted/06_verify_verified.png",
+      "reason": "App screenshot artifact — not served by server, not referenced in any code",
+      "confidence": 0.90,
+      "category": "screenshot"
+    },
+    {
+      "original_path": "07_verify_revoked.png",
+      "new_path": "unwanted/07_verify_revoked.png",
+      "reason": "App screenshot artifact — not served by server, not referenced in any code",
+      "confidence": 0.90,
+      "category": "screenshot"
+    },
+    {
+      "original_path": "08_audit_log.png",
+      "new_path": "unwanted/08_audit_log.png",
+      "reason": "App screenshot artifact — not served by server, not referenced in any code",
+      "confidence": 0.90,
+      "category": "screenshot"
+    },
+    {
+      "original_path": "AUTHENX_COMPLETE_REPORT.md",
+      "new_path": "unwanted/AUTHENX_COMPLETE_REPORT.md",
+      "reason": "Point-in-time status report; ephemeral session artifact; content superseded by CLAUDE.md, CONTEXT.md, README.md",
+      "confidence": 0.88,
+      "category": "session-report"
+    },
+    {
+      "original_path": "AUTHENX_PRD_REVIEW.md",
+      "new_path": "unwanted/AUTHENX_PRD_REVIEW.md",
+      "reason": "PRD compliance review report; superseded by prd.md and CLAUDE.md as authoritative sources",
+      "confidence": 0.85,
+      "category": "session-report"
+    },
+    {
+      "original_path": "AuthenX_Build_Roadmap.docx",
+      "new_path": "unwanted/AuthenX_Build_Roadmap.docx",
+      "reason": "Word document artifact — not referenced by any code or build process; roadmap captured in prd.md",
+      "confidence": 0.92,
+      "category": "office-doc"
+    },
+    {
+      "original_path": "AuthenX_Project_Report.docx",
+      "new_path": "unwanted/AuthenX_Project_Report.docx",
+      "reason": "Word document artifact — not referenced by any code or build process",
+      "confidence": 0.92,
+      "category": "office-doc"
+    },
+    {
+      "original_path": "AuthenX_Technical_Architecture.docx",
+      "new_path": "unwanted/AuthenX_Technical_Architecture.docx",
+      "reason": "Word document artifact — architecture captured in CONTEXT.md and CLAUDE.md",
+      "confidence": 0.92,
+      "category": "office-doc"
+    },
+    {
+      "original_path": "BROWSER_DEMO_GUIDE.md",
+      "new_path": "unwanted/BROWSER_DEMO_GUIDE.md",
+      "reason": "Demo guide — ephemeral walkthrough document; CLAUDE.md has canonical startup instructions",
+      "confidence": 0.87,
+      "category": "demo-artifact"
+    },
+    {
+      "original_path": "COMPLETE_BUILD_SUMMARY.md",
+      "new_path": "unwanted/COMPLETE_BUILD_SUMMARY.md",
+      "reason": "Session build summary — ephemeral artifact; project state should be derived from code and git history",
+      "confidence": 0.88,
+      "category": "session-report"
+    },
+    {
+      "original_path": "DEMO_WALKTHROUGH.md",
+      "new_path": "unwanted/DEMO_WALKTHROUGH.md",
+      "reason": "Demo walkthrough guide — ephemeral demo artifact, not needed for runtime or development",
+      "confidence": 0.88,
+      "category": "demo-artifact"
+    },
+    {
+      "original_path": "DESIGN_SYSTEM.md",
+      "new_path": "unwanted/DESIGN_SYSTEM.md",
+      "reason": "Design system doc — active SPA is embedded inline in server.js; this doc references a separate UI that is not served",
+      "confidence": 0.85,
+      "category": "stale-doc"
+    },
+    {
+      "original_path": "NEXT_SESSION_BUILD_CHECKLIST.md",
+      "new_path": "unwanted/NEXT_SESSION_BUILD_CHECKLIST.md",
+      "reason": "Session checklist — ephemeral planning artifact for a completed prior session",
+      "confidence": 0.90,
+      "category": "session-artifact"
+    },
+    {
+      "original_path": "PRODUCTION_READINESS_AND_FIXES_2026-04-06.md",
+      "new_path": "unwanted/PRODUCTION_READINESS_AND_FIXES_2026-04-06.md",
+      "reason": "Dated production readiness report from 2026-04-06; point-in-time artifact, not needed for runtime",
+      "confidence": 0.87,
+      "category": "session-report"
+    },
+    {
+      "original_path": "SESSION_HANDOFF.md",
+      "new_path": "unwanted/SESSION_HANDOFF.md",
+      "reason": "Session handoff note — ephemeral artifact documenting a completed session transition",
+      "confidence": 0.90,
+      "category": "session-artifact"
+    },
+    {
+      "original_path": "START_DEMO_MAC.sh",
+      "new_path": "unwanted/START_DEMO_MAC.sh",
+      "reason": "Mac-specific demo startup script — CLAUDE.md has canonical startup commands; redundant shell script",
+      "confidence": 0.87,
+      "category": "demo-artifact"
+    },
+    {
+      "original_path": "demo_test.js",
+      "new_path": "unwanted/demo_test.js",
+      "reason": "Ad-hoc demo test script — e2e-test.js is the canonical test suite per CLAUDE.md; this is a throwaway script",
+      "confidence": 0.87,
+      "category": "throwaway-test"
+    },
+    {
+      "original_path": "fix-and-start.js",
+      "new_path": "unwanted/fix-and-start.js",
+      "reason": "One-off fix + startup script — patches a DB path mismatch that no longer exists; not in CLAUDE.md startup instructions",
+      "confidence": 0.88,
+      "category": "one-off-fix"
+    },
+    {
+      "original_path": "fix_paths.js",
+      "new_path": "unwanted/fix_paths.js",
+      "reason": "One-off path replacement script — temporary fix artifact, no longer needed",
+      "confidence": 0.92,
+      "category": "one-off-fix"
+    },
+    {
+      "original_path": "fix_paths_revert.js",
+      "new_path": "unwanted/fix_paths_revert.js",
+      "reason": "Revert script for a one-off path fix — temporary artifact, no longer needed",
+      "confidence": 0.92,
+      "category": "one-off-fix"
+    },
+    {
+      "original_path": "fix_routing.js",
+      "new_path": "unwanted/fix_routing.js",
+      "reason": "One-off routing fix script — temporary artifact applied and no longer needed",
+      "confidence": 0.92,
+      "category": "one-off-fix"
+    },
+    {
+      "original_path": "start-demo.sh",
+      "new_path": "unwanted/start-demo.sh",
+      "reason": "Demo startup shell script — CLAUDE.md has canonical startup commands; redundant",
+      "confidence": 0.87,
+      "category": "demo-artifact"
+    },
+    {
+      "original_path": "test_cors.js",
+      "new_path": "unwanted/test_cors.js",
+      "reason": "One-off CORS test server (serves 401 always) — throwaway debugging artifact, not part of test suite",
+      "confidence": 0.90,
+      "category": "throwaway-test"
+    },
+    {
+      "original_path": "test_fallback.js",
+      "new_path": "unwanted/test_fallback.js",
+      "reason": "Half-written, non-functional test stub — immediately hits 'Not ok hit' branch; throwaway artifact",
+      "confidence": 0.92,
+      "category": "throwaway-test"
+    },
+    {
+      "original_path": "authenx-node/.fuse_hidden0000001e00000001",
+      "new_path": "unwanted/authenx-node/.fuse_hidden0000001e00000001",
+      "reason": "Linux FUSE filesystem temp file (SQLite WAL shared memory) — OS artifact accidentally committed, not application code",
+      "confidence": 0.95,
+      "category": "os-artifact"
+    },
+    {
+      "original_path": "authenx-node/.fuse_hidden0000002d00000002",
+      "new_path": "unwanted/authenx-node/.fuse_hidden0000002d00000002",
+      "reason": "Linux FUSE filesystem temp file — OS artifact accidentally committed",
+      "confidence": 0.95,
+      "category": "os-artifact"
+    },
+    {
+      "original_path": "authenx-node/.fuse_hidden0000004000000001",
+      "new_path": "unwanted/authenx-node/.fuse_hidden0000004000000001",
+      "reason": "Linux FUSE filesystem temp file — OS artifact accidentally committed",
+      "confidence": 0.95,
+      "category": "os-artifact"
+    },
+    {
+      "original_path": "authenx-node/.fuse_hidden0000004300000001",
+      "new_path": "unwanted/authenx-node/.fuse_hidden0000004300000001",
+      "reason": "Linux FUSE filesystem temp file — OS artifact accidentally committed",
+      "confidence": 0.95,
+      "category": "os-artifact"
+    },
+    {
+      "original_path": "authenx-node/authenx-node/",
+      "new_path": "unwanted/authenx-node/authenx-node/authenx-node/",
+      "reason": "Nested duplicate directory — older copy of authenx-node/src/ (missing privacy.js route); accidental double-nesting artifact. NOTE: triple-nested in unwanted/ because parent dir was pre-created by mkdir",
+      "rollback_note": "To restore: mv unwanted/authenx-node/authenx-node/authenx-node authenx-node/authenx-node",
+      "confidence": 0.92,
+      "category": "duplicate-dir"
+    },
+    {
+      "original_path": "authenx-node/src/aes_key.json",
+      "new_path": "unwanted/authenx-node/src/aes_key.json",
+      "reason": "Misplaced AES key file inside src/ — server loads from process.cwd() (authenx-node/), not src/; stale copy",
+      "confidence": 0.90,
+      "category": "misplaced-file"
+    },
+    {
+      "original_path": "authenx-node/src/authenx.db",
+      "new_path": "unwanted/authenx-node/src/authenx.db",
+      "reason": "Misplaced SQLite DB inside src/ — active DB is authenx-node/authenx.db (used by server and docker-compose); this is a stale Apr-06 copy",
+      "confidence": 0.90,
+      "category": "misplaced-file"
+    },
+    {
+      "original_path": "authenx-node/src/authenx.db-shm",
+      "new_path": "unwanted/authenx-node/src/authenx.db-shm",
+      "reason": "SQLite WAL shared memory file for stale DB copy in src/ — misplaced artifact",
+      "confidence": 0.90,
+      "category": "misplaced-file"
+    },
+    {
+      "original_path": "authenx-node/src/authenx.db-wal",
+      "new_path": "unwanted/authenx-node/src/authenx.db-wal",
+      "reason": "SQLite WAL log for stale DB copy in src/ — misplaced artifact (1.1MB, older Apr-06 data)",
+      "confidence": 0.90,
+      "category": "misplaced-file"
+    },
+    {
+      "original_path": "authenx-node/src/seed_codes.json",
+      "new_path": "unwanted/authenx-node/src/seed_codes.json",
+      "reason": "Misplaced seed codes inside src/ — active file is authenx-node/seed_codes.json (mounted by docker-compose); this is a stale copy",
+      "confidence": 0.88,
+      "category": "misplaced-file"
+    },
+    {
+      "original_path": "authenx/packages/web/dist/",
+      "new_path": "unwanted/authenx/packages/web/dist/",
+      "reason": "Vite build artifact directory — generated output, should not be committed to source control",
+      "confidence": 0.90,
+      "category": "build-artifact"
+    },
+    {
+      "original_path": "colleges/fix-setup.js",
+      "new_path": "unwanted/colleges/fix-setup.js",
+      "reason": "One-off connector fix + setup script — fixes were already applied; not referenced in any active startup flow",
+      "confidence": 0.88,
+      "category": "one-off-fix"
+    },
+    {
+      "original_path": "authenx-node/src/logs/authenx-2026-04-06.jsonl",
+      "new_path": "unwanted/authenx-node/src/logs/authenx-2026-04-06.jsonl",
+      "reason": "Misplaced log file inside src/ — logger writes to process.cwd()/logs (authenx-node/logs/); duplicate of authenx-node/logs/authenx-2026-04-06.jsonl",
+      "confidence": 0.92,
+      "category": "misplaced-file"
+    },
+    {
+      "original_path": "wireframe_college_portal.html",
+      "new_path": "unwanted/wireframe_college_portal.html",
+      "reason": "HTML wireframe/mockup file — not served by server (SPA embedded in server.js), not in Dockerfile or docker-compose; UI design artifact",
+      "confidence": 0.90,
+      "category": "design-artifact"
+    },
+    {
+      "original_path": "wireframe_employer_portal.html",
+      "new_path": "unwanted/wireframe_employer_portal.html",
+      "reason": "HTML wireframe/mockup file — not served by server, not in Dockerfile or docker-compose; UI design artifact",
+      "confidence": 0.90,
+      "category": "design-artifact"
+    }
+  ]
+}

@@ -1,6 +1,6 @@
-# AuthenX — Getting Started Guide
+# AuthenX TypeScript Monorepo — Setup Guide
 
-This is your complete step-by-step guide to get the AuthenX project running locally from zero.
+This guide covers the TypeScript/Fastify/PostgreSQL implementation in `authenx/`. For the active production Node.js server see the root [README.md](../README.md) and [CONTEXT.md](../CONTEXT.md).
 
 ---
 
@@ -209,19 +209,6 @@ authenx/
 ├── .env.example       ← Root environment template
 └── SETUP.md           ← This file
 ```
-
----
-
-## What to Build Next (Phase 1 Completion Tasks)
-
-After the above is running, these are your next development tasks in order:
-
-1. `POST /v1/auth/register` — Create new employer/college accounts
-2. `POST /v1/colleges` — College registration endpoint
-3. `POST /v1/colleges/:id/onboard` — Set connector, public key, run pilot test
-4. Full end-to-end test: register college → issue token → verify → see result
-5. Add rate limiting tests
-6. Write unit tests for `canonicalize.ts` and `crypto.ts` (most critical)
 
 ---
 

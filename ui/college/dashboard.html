@@ -6,7 +6,7 @@
 <title>AuthenX — Dashboard</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="/college/app.css">
+<link rel="stylesheet" href="app.css">
 </head>
 <body>
 <div class="app-shell">
@@ -67,7 +67,7 @@
             <a href="/college/audit.html" class="btn btn-ghost btn-sm">View All</a>
           </div>
           <div id="activity-list">
-            <div style="text-align:center;padding:40px;color:var(--ax-gray-400)">
+            <div style="text-align:center;padding:40px;color:var(--ax-subtle)">
               <div class="spinner spinner-blue" style="margin:0 auto 10px"></div>
               Loading activity...
             </div>
@@ -98,7 +98,7 @@
           <!-- Connector Status Card -->
           <div class="card">
             <div class="card-title" style="margin-bottom:12px">ERP Connector Status</div>
-            <div id="connector-detail" style="font-size:13px;color:var(--ax-gray-500)">Checking connector...</div>
+            <div id="connector-detail" style="font-size:13px;color:var(--ax-muted)">Checking connector...</div>
           </div>
         </div>
       </div>
@@ -130,8 +130,8 @@ async function loadDashboard() {
     document.getElementById('stat-tokens-sub').textContent = `${active} active, ${revoked} revoked`;
     document.getElementById('stat-active').textContent = active;
     document.getElementById('stat-revoked').textContent = revoked;
-    document.getElementById('stat-verifs').textContent = auditData.total_verifications || 0;
-    document.getElementById('stat-verifs-sub').textContent = `${auditData.successful_verifications || 0} verified, ${auditData.failed_verifications || 0} failed`;
+    document.getElementById('stat-verifs').textContent = auditData.stats?.verifications || 0;
+    document.getElementById('stat-verifs-sub').textContent = `${auditData.stats?.verifications_today || 0} today`;
 
   } catch (err) {
     console.error('Stats error:', err);
@@ -142,7 +142,7 @@ async function loadDashboard() {
     const auditLog = await API.get('/audit?limit=10');
     renderActivity(auditLog.events || []);
   } catch (err) {
-    document.getElementById('activity-list').innerHTML = '<div style="text-align:center;padding:30px;color:var(--ax-gray-400)">Could not load activity</div>';
+    document.getElementById('activity-list').innerHTML = '<div style="text-align:center;padding:30px;color:var(--ax-subtle)">Could not load activity</div>';
   }
 
   // Check connector
@@ -165,15 +165,15 @@ function renderActivity(events) {
     const [label, cls] = eventTypeMap[e.request_type] || ['EVENT', 'event-DECODED'];
     const resultClass = e.result === 'verified' ? 'event-VERIFIED' : e.result === 'revoked' ? 'event-REVOKED' : 'event-DECODED';
     return `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--ax-gray-100)">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--ax-border)">
         <div style="display:flex;align-items:center;gap:10px">
           <span class="event-badge ${resultClass}">${e.result?.toUpperCase()}</span>
           <div>
-            <div style="font-size:13px;font-weight:500;color:var(--ax-gray-800)">${e.employer_name || 'Unknown'}</div>
-            <div style="font-size:11px;color:var(--ax-gray-400)">${e.request_type?.replace('_', ' ')}</div>
+            <div style="font-size:13px;font-weight:500;color:var(--ax-text)">${e.employer_name || 'Unknown'}</div>
+            <div style="font-size:11px;color:var(--ax-subtle)">${e.request_type?.replace('_', ' ')}</div>
           </div>
         </div>
-        <div style="font-size:11px;color:var(--ax-gray-400);text-align:right">${formatDate(e.created_at)}</div>
+        <div style="font-size:11px;color:var(--ax-subtle);text-align:right">${formatDate(e.created_at)}</div>
       </div>`;
   }).join('');
 }
@@ -189,8 +189,8 @@ async function checkConnectorDetail() {
           <span style="color:var(--ax-verified);font-size:18px">✓</span>
           <span style="color:var(--ax-verified);font-weight:600">Live ERP Connected</span>
         </div>
-        <div style="font-size:12px;color:var(--ax-gray-400)">College: ${data.college || '—'}</div>
-        <div style="font-size:12px;color:var(--ax-gray-400);margin-top:4px">Port: 9000 · Running since ${new Date(data.timestamp).toLocaleTimeString()}</div>`;
+        <div style="font-size:12px;color:var(--ax-subtle)">College: ${data.college || '—'}</div>
+        <div style="font-size:12px;color:var(--ax-subtle);margin-top:4px">Port: 9000 · Running since ${new Date(data.timestamp).toLocaleTimeString()}</div>`;
     } else throw new Error();
   } catch {
     el.innerHTML = `
@@ -198,7 +198,7 @@ async function checkConnectorDetail() {
         <span style="color:var(--ax-pending);font-size:18px">⚠</span>
         <span style="color:var(--ax-pending);font-weight:600">Mock ERP Active</span>
       </div>
-      <div style="font-size:12px;color:var(--ax-gray-400)">Start connector: <code>node connector.js</code></div>`;
+      <div style="font-size:12px;color:var(--ax-subtle)">Start connector: <code>node connector.js</code></div>`;
   }
 }
 

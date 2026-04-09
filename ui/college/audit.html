@@ -6,7 +6,7 @@
 <title>AuthenX — Audit Log</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="./app.css">
+<link rel="stylesheet" href="app.css">
 </head>
 <body>
 <div class="app-shell">
@@ -15,17 +15,30 @@
     <header class="topbar">
       <div class="topbar-title">
         <h2>Audit Log</h2>
-        <p>Immutable record of all verification events</p>
+        <p>Immutable record of all credential lifecycle events</p>
       </div>
       <div class="topbar-actions">
-        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ax-gray-500)">
+        <div class="export-row">
+          <button class="btn btn-secondary btn-sm" onclick="exportLog('csv')">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            CSV
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="exportLog('json')">
+            <svg width="13" height="13" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+            JSON
+          </button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--ax-muted)">
           <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-          Read-only — cannot be modified
+          Read-only
         </div>
       </div>
     </header>
 
     <main class="page-content">
+      <!-- Anomaly alerts (shown only when anomalies detected) -->
+      <div id="anomaly-section"></div>
+
       <!-- Stats row -->
       <div class="stats-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:24px" id="audit-stats">
         <div class="stat-card"><div class="stat-label">Total Events</div><div class="stat-value" id="stat-total">—</div></div>
@@ -34,17 +47,28 @@
         <div class="stat-card amber"><div class="stat-label">Errors</div><div class="stat-value" id="stat-err">—</div></div>
       </div>
 
+      <!-- Date range filter -->
+      <div style="margin-bottom:16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <span style="font-size:13px;color:var(--ax-muted)">Date range:</span>
+        <input type="date" id="date-from" class="date-input" onchange="filterEvents()" title="From date">
+        <span style="color:var(--ax-subtle)">→</span>
+        <input type="date" id="date-to" class="date-input" onchange="filterEvents()" title="To date">
+        <button class="btn btn-ghost btn-sm" onclick="clearDates()">Clear</button>
+      </div>
+
       <!-- Filter bar -->
       <div class="search-bar">
         <div class="search-input-wrap">
           <svg class="search-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-          <input type="text" id="search-input" placeholder="Search by employer or result…" oninput="filterEvents()">
+          <input type="text" id="search-input" placeholder="Search by employer, result, token ID…" oninput="filterEvents()">
         </div>
         <div class="filter-tabs">
-          <button class="filter-tab active" data-filter="all" onclick="setFilter('all',this)">All</button>
-          <button class="filter-tab" data-filter="verified" onclick="setFilter('verified',this)">Verified</button>
-          <button class="filter-tab" data-filter="revoked" onclick="setFilter('revoked',this)">Revoked</button>
-          <button class="filter-tab" data-filter="error" onclick="setFilter('error',this)">Error</button>
+          <button class="filter-tab active" data-filter="all"          onclick="setFilter('all',this)">All</button>
+          <button class="filter-tab"        data-filter="verified"     onclick="setFilter('verified',this)">Verified</button>
+          <button class="filter-tab"        data-filter="revoked"      onclick="setFilter('revoked',this)">Revoked</button>
+          <button class="filter-tab"        data-filter="live_verify"  onclick="setFilter('live_verify',this)">Live Verify</button>
+          <button class="filter-tab"        data-filter="code_decode"  onclick="setFilter('code_decode',this)">Code Decode</button>
+          <button class="filter-tab"        data-filter="error"        onclick="setFilter('error',this)">Error</button>
         </div>
       </div>
 
@@ -59,22 +83,23 @@
               <th>Hash Match</th>
               <th>Sig Valid</th>
               <th>Latency</th>
+              <th>Token ID</th>
             </tr>
           </thead>
           <tbody id="audit-tbody">
-            <tr><td colspan="7" style="text-align:center;padding:48px">
+            <tr><td colspan="8" style="text-align:center;padding:48px">
               <div class="spinner spinner-blue" style="margin:0 auto 12px"></div>
               Loading audit log…
             </td></tr>
           </tbody>
         </table>
       </div>
-      <div style="margin-top:12px;font-size:12px;color:var(--ax-gray-400)" id="count-label"></div>
+      <div style="margin-top:12px;font-size:12px;color:var(--ax-subtle)" id="count-label"></div>
     </main>
   </div>
 </div>
 
-<script src="./app.js"></script>
+<script src="/college/app.js"></script>
 <script>
 if (!Auth.requireAuth()) {}
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('audit');
@@ -86,33 +111,76 @@ let currentFilter = 'all';
 async function loadAudit() {
   try {
     const [logData, statsData] = await Promise.all([
-      API.get('/audit?limit=100'),
+      API.get('/audit?limit=500'),
       API.get('/audit/stats'),
     ]);
     allEvents = logData.events || [];
 
-    // Stats
-    document.getElementById('stat-total').textContent = statsData.total_verifications || allEvents.length;
-    document.getElementById('stat-verified').textContent = statsData.successful_verifications || allEvents.filter(e=>e.result==='verified').length;
+    document.getElementById('stat-total').textContent = allEvents.length;
+    document.getElementById('stat-verified').textContent = allEvents.filter(e=>e.result==='verified').length;
     document.getElementById('stat-rev').textContent = allEvents.filter(e=>e.result==='revoked').length;
-    document.getElementById('stat-err').textContent = statsData.failed_verifications || allEvents.filter(e=>e.result==='error').length;
+    document.getElementById('stat-err').textContent = allEvents.filter(e=>e.result==='error').length;
 
+    checkAnomalies(allEvents);
     renderTable(allEvents);
   } catch (err) {
     document.getElementById('audit-tbody').innerHTML =
-      `<tr><td colspan="7" style="text-align:center;padding:40px;color:var(--ax-gray-400)">Error: ${err.message}</td></tr>`;
+      `<tr><td colspan="8" style="text-align:center;padding:40px;color:var(--ax-subtle)">Error: ${err.message}</td></tr>`;
     toast('Failed to load audit log: ' + err.message, 'error');
+  }
+}
+
+function checkAnomalies(events) {
+  const section = document.getElementById('anomaly-section');
+  const alerts = [];
+
+  const total = events.length;
+  if (total > 0) {
+    const sigFails = events.filter(e => e.sig_valid === 0).length;
+    const mismatch = events.filter(e => e.hash_match === 0).length;
+    const highLatency = events.filter(e => (e.latency_ms||0) > 5000).length;
+
+    if (sigFails > 0)
+      alerts.push(`<strong>${sigFails} signature validation failure${sigFails>1?'s':''}</strong> — potential tampering detected`);
+    if (mismatch / total > 0.1)
+      alerts.push(`<strong>${Math.round(mismatch/total*100)}% hash mismatch rate</strong> — exceeds 10% threshold`);
+    if (highLatency > 0)
+      alerts.push(`<strong>${highLatency} event${highLatency>1?'s':''} with latency &gt;5s</strong> — connector may be slow`);
+  }
+
+  if (alerts.length) {
+    section.innerHTML = alerts.map(a => `
+      <div class="anomaly-alert">
+        <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        <span>${a}</span>
+      </div>`).join('');
+  } else {
+    section.innerHTML = '';
   }
 }
 
 function filterEvents() {
   const q = document.getElementById('search-input').value.toLowerCase();
+  const from = document.getElementById('date-from').value;
+  const to   = document.getElementById('date-to').value;
   let filtered = allEvents;
-  if (currentFilter !== 'all') filtered = filtered.filter(e => e.result === currentFilter);
+
+  if (currentFilter !== 'all') {
+    if (currentFilter === 'verified' || currentFilter === 'revoked' || currentFilter === 'error') {
+      filtered = filtered.filter(e => e.result === currentFilter);
+    } else {
+      filtered = filtered.filter(e => e.request_type === currentFilter);
+    }
+  }
+
+  if (from) filtered = filtered.filter(e => e.created_at >= from);
+  if (to)   filtered = filtered.filter(e => e.created_at <= to + 'T23:59:59');
+
   if (q) filtered = filtered.filter(e =>
     (e.employer_name||'').toLowerCase().includes(q) ||
     (e.result||'').toLowerCase().includes(q) ||
-    (e.request_type||'').toLowerCase().includes(q)
+    (e.request_type||'').toLowerCase().includes(q) ||
+    (e.token_id||'').toLowerCase().includes(q)
   );
   renderTable(filtered);
 }
@@ -124,12 +192,18 @@ function setFilter(filter, el) {
   filterEvents();
 }
 
+function clearDates() {
+  document.getElementById('date-from').value = '';
+  document.getElementById('date-to').value   = '';
+  filterEvents();
+}
+
 function renderTable(events) {
   document.getElementById('count-label').textContent = `Showing ${events.length} event${events.length !== 1 ? 's' : ''}`;
   const tbody = document.getElementById('audit-tbody');
 
   if (!events.length) {
-    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state">
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
       <h3>No audit events</h3>
       <p>Verification events will appear here</p>
     </div></td></tr>`;
@@ -137,32 +211,63 @@ function renderTable(events) {
   }
 
   const typeLabels = {
-    live_verify: ['VERIFIED', 'event-VERIFIED'],
-    code_decode: ['DECODED',  'event-DECODED'],
+    live_verify: 'LIVE VERIFY',
+    code_decode: 'CODE DECODE',
   };
 
-  const resultLabels = {
-    verified: ['VERIFIED', 'event-VERIFIED'],
-    revoked:  ['REVOKED',  'event-REVOKED'],
-    error:    ['ERROR',    'event-DECODED'],
+  const checkMark = (v) => v == 1
+    ? '<span style="color:var(--ax-verified)">✓</span>'
+    : v == 0
+    ? '<span style="color:var(--ax-revoked)">✕</span>'
+    : '<span style="color:var(--ax-subtle)">—</span>';
+
+  const resultBadge = (r) => {
+    const map = {
+      verified: `<span class="event-badge event-VERIFIED">VERIFIED</span>`,
+      revoked:  `<span class="event-badge event-REVOKED">REVOKED</span>`,
+      error:    `<span class="event-badge event-DECODED">ERROR</span>`,
+    };
+    return map[r] || `<span class="event-badge">${(r||'').toUpperCase()}</span>`;
   };
 
   tbody.innerHTML = events.map(e => {
-    const [typeLabel, typeCls] = typeLabels[e.request_type] || ['EVENT', 'event-DECODED'];
-    const [resLabel,  resCls]  = resultLabels[e.result]     || [e.result?.toUpperCase()||'—', 'event-DECODED'];
-    const checkMark = (v) => v == 1 ? '<span style="color:var(--ax-verified)">✓</span>' : v == 0 ? '<span style="color:var(--ax-revoked)">✕</span>' : '<span style="color:var(--ax-gray-400)">—</span>';
-
+    const latencyColor = (e.latency_ms||0) > 5000 ? 'color:var(--ax-revoked)' : (e.latency_ms||0) > 2000 ? 'color:var(--ax-pending)' : '';
     return `
       <tr>
-        <td style="font-size:12px;white-space:nowrap">${formatDate(e.created_at)}</td>
-        <td><span class="event-badge ${typeCls}">${e.request_type?.replace('_',' ').toUpperCase()}</span></td>
-        <td><span class="event-badge ${resCls}">${resLabel}</span></td>
-        <td style="font-size:12px;color:var(--ax-gray-600)">${e.employer_name || '—'}</td>
+        <td style="font-size:11px;white-space:nowrap;color:var(--ax-muted)">${e.created_at?.replace('T',' ').slice(0,19) || '—'}</td>
+        <td><span class="event-badge event-DECODED">${typeLabels[e.request_type] || e.request_type?.toUpperCase()}</span></td>
+        <td>${resultBadge(e.result)}</td>
+        <td style="font-size:12px;color:var(--ax-muted)">${e.employer_name || '—'}</td>
         <td style="text-align:center">${checkMark(e.hash_match)}</td>
         <td style="text-align:center">${checkMark(e.sig_valid)}</td>
-        <td style="font-size:12px;color:var(--ax-gray-500)">${e.latency_ms != null ? e.latency_ms + 'ms' : '—'}</td>
+        <td style="font-size:12px;${latencyColor}">${e.latency_ms != null ? e.latency_ms + 'ms' : '—'}</td>
+        <td style="font-family:monospace;font-size:10px;color:var(--ax-subtle)">${(e.token_id||'').slice(0,8)}…</td>
       </tr>`;
   }).join('');
+}
+
+function exportLog(format) {
+  const from = document.getElementById('date-from').value;
+  const to   = document.getElementById('date-to').value;
+  let url = `/v1/audit/export?format=${format}`;
+  if (from) url += `&from=${from}`;
+  if (to)   url += `&to=${to}`;
+
+  // Create a link with auth header isn't possible via <a> — download via fetch blob
+  const token = Auth.getToken();
+  fetch(`http://localhost:3000${url}`, {
+    headers: { Authorization: `Bearer ${token}` }
+  }).then(res => {
+    if (!res.ok) throw new Error('Export failed');
+    return res.blob();
+  }).then(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `authenx-audit-${Date.now()}.${format}`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('Export downloaded', 'success');
+  }).catch(err => toast('Export failed: ' + err.message, 'error'));
 }
 
 loadAudit();

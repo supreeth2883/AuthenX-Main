@@ -12,7 +12,6 @@ type Step = 'input' | 'decoded' | 'verifying' | 'result';
 
 export function VerifyPage() {
   const [code, setCode] = useState('');
-  const [tokenId, setTokenId] = useState('');
   const [step, setStep] = useState<Step>('input');
   const [decodedInfo, setDecodedInfo] = useState<Record<string, string> | null>(null);
   const [result, setResult] = useState<VerificationResult | null>(null);
@@ -35,7 +34,6 @@ export function VerifyPage() {
         credential_type: data.credential_type,
         issued_at: data.issued_at,
       });
-      setTokenId(data.token_id);
       setStep('decoded');
     } catch (err: any) {
       setError(err.response?.data?.message ?? 'Invalid AuthenX Code');
@@ -47,7 +45,7 @@ export function VerifyPage() {
     setStep('verifying');
     setError('');
     try {
-      const { data } = await verifyApi.liveVerify(tokenId);
+      const { data } = await verifyApi.liveVerify(code.trim());
       setResult(data);
       setStep('result');
     } catch (err: any) {
@@ -57,7 +55,7 @@ export function VerifyPage() {
   }
 
   function reset() {
-    setCode(''); setTokenId(''); setStep('input');
+    setCode(''); setStep('input');
     setDecodedInfo(null); setResult(null); setError('');
   }
 

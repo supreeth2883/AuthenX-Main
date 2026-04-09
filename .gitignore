@@ -4,3 +4,24 @@ node_modules/
 *.db-shm
 *.db-wal
 *.log
+
+# Secrets - NEVER commit these
+aes_key.json
+**/aes_key.json
+**/.env
+.env
+**/seed_codes.json
+seed_codes.json
+**/connector_key.json
+connector_key.json
+
+# HSM private keys
+authenx-hsm/keys/*.json
+authenx-hsm/.master_key
+
+# Audit logs (may contain sensitive metadata)
+authenx-hsm/*.jsonl
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Disclosure Policy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-mount"></div>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h2>Disclosure Policy</h2>
+        <p>Control which credential fields are visible to employers at verification time</p>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-primary" onclick="savePolicy()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+          Save Policy
+        </button>
+      </div>
+    </header>
+
+    <main class="page-content">
+      <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:24px;align-items:start">
+
+        <!-- Policy editor -->
+        <div>
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-title" style="margin-bottom:4px">Field Visibility</div>
+            <div class="card-sub" style="margin-bottom:20px">Choose what employers see when they verify a credential</div>
+
+            <div class="table-container" style="margin-bottom:0;background:transparent;border:1px solid var(--ax-border);border-radius:8px">
+              <table class="policy-table">
+                <thead>
+                  <tr>
+                    <th>Field</th>
+                    <th>Visibility</th>
+                  </tr>
+                </thead>
+                <tbody id="policy-tbody">
+                  <tr><td colspan="2" style="text-align:center;padding:32px">
+                    <div class="spinner spinner-blue" style="margin:0 auto 8px"></div>
+                    Loading policy…
+                  </td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Verifier role filter -->
+          <div class="card" style="margin-bottom:20px">
+            <div class="card-title" style="margin-bottom:4px">Verifier Role Filter</div>
+            <div class="card-sub" style="margin-bottom:16px">Restrict visibility to specific employer roles</div>
+
+            <div class="form-group">
+              <label>Show credential details to</label>
+              <select class="role-select" id="role-filter" onchange="updatePreview()">
+                <option value="all">All verifiers</option>
+                <option value="hr">HR only</option>
+                <option value="government">Government agencies only</option>
+                <option value="custom">Custom list</option>
+              </select>
+            </div>
+
+            <div style="display:flex;align-items:center;gap:10px;margin-top:16px;padding:14px;background:var(--ax-bg);border-radius:8px">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--ax-text)">
+                <input type="checkbox" id="require-approval" style="accent-color:var(--ax-blue);width:16px;height:16px" onchange="updatePreview()">
+                Require admin sign-off before each verification reveals sensitive fields
+              </label>
+            </div>
+          </div>
+
+          <!-- Compliance -->
+          <div class="card">
+            <div class="card-title" style="margin-bottom:14px">Compliance</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <span class="compliance-badge">🇪🇺 GDPR Aware</span>
+              <span class="compliance-badge">🎓 FERPA Compliant</span>
+              <span class="compliance-badge">🇮🇳 DPDP Act 2023</span>
+            </div>
+            <p style="margin-top:12px;font-size:12px;color:var(--ax-subtle);line-height:1.6">
+              AuthenX never stores raw personal data. The disclosure policy controls what fields are returned from live ERP data at verification time. Hiding a field means it is neither returned to the employer nor stored in AuthenX's audit log.
+            </p>
+          </div>
+        </div>
+
+        <!-- Employer preview -->
+        <div>
+          <div class="card" style="position:sticky;top:24px">
+            <div class="card-title" style="margin-bottom:4px">Employer Preview</div>
+            <div class="card-sub" style="margin-bottom:16px">What an employer sees when they verify a credential</div>
+
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+              <span class="badge badge-verified">✓ VERIFIED</span>
+              <span style="font-size:12px;color:var(--ax-subtle)">Sample verification result</span>
+            </div>
+
+            <div class="preview-employer-card" id="employer-preview">
+              <div style="text-align:center;color:var(--ax-subtle);padding:24px">Loading preview…</div>
+            </div>
+
+            <div style="margin-top:14px;padding:10px;background:rgba(16,185,129,.06);border-radius:6px;font-size:11px;color:var(--ax-verified)">
+              🔒 Fields marked "Hidden" are never transmitted to the employer.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/college/app.js"></script>
+<script>
+if (!Auth.requireAuth()) {}
+document.getElementById('sidebar-mount').innerHTML = renderSidebar('disclosure');
+initNav('disclosure');
+
+const FIELDS = [
+  { key: 'name',            label: 'Full Name' },
+  { key: 'degree',          label: 'Degree' },
+  { key: 'branch',          label: 'Branch' },
+  { key: 'cgpa',            label: 'CGPA' },
+  { key: 'graduation_year', label: 'Graduation Year' },
+  { key: 'issue_date',      label: 'Issue Date' },
+];
+
+const SAMPLE = {
+  name: 'SUPREETH K',
+  degree: 'BTECH',
+  branch: 'COMPUTER SCIENCE',
+  cgpa: '9.2',
+  graduation_year: '2024',
+  issue_date: '2024-05-15',
+};
+
+let policy = {};
+
+async function loadPolicy() {
+  try {
+    const data = await API.get('/disclosure-policy');
+    for (const row of (data.policy || [])) {
+      policy[row.field_name] = row;
+    }
+    renderPolicyTable();
+    updatePreview();
+  } catch (err) {
+    // Default: all visible
+    FIELDS.forEach(f => policy[f.key] = { field_name: f.key, visibility: 'always_show', role_filter: 'all', require_approval: 0 });
+    renderPolicyTable();
+    updatePreview();
+  }
+}
+
+function renderPolicyTable() {
+  const tbody = document.getElementById('policy-tbody');
+  tbody.innerHTML = FIELDS.map(f => {
+    const p = policy[f.key] || { visibility: 'always_show' };
+    return `
+      <tr>
+        <td style="font-size:13px;font-weight:600;color:var(--ax-text)">${f.label}</td>
+        <td>
+          <div class="radio-group">
+            <label class="radio-opt">
+              <input type="radio" name="vis_${f.key}" value="always_show"
+                ${p.visibility === 'always_show' ? 'checked' : ''}
+                onchange="onVisChange('${f.key}')">
+              <label for="vis_${f.key}_show" style="pointer-events:none">Always show</label>
+            </label>
+            <label class="radio-opt">
+              <input type="radio" name="vis_${f.key}" value="always_hide"
+                ${p.visibility === 'always_hide' ? 'checked' : ''}
+                onchange="onVisChange('${f.key}')">
+              <label for="vis_${f.key}_hide" style="pointer-events:none">Always hide</label>
+            </label>
+            <label class="radio-opt">
+              <input type="radio" name="vis_${f.key}" value="admin_decision"
+                ${p.visibility === 'admin_decision' ? 'checked' : ''}
+                onchange="onVisChange('${f.key}')">
+              <label for="vis_${f.key}_admin" style="pointer-events:none">Admin decides</label>
+            </label>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+function onVisChange(fieldKey) {
+  const val = document.querySelector(`input[name="vis_${fieldKey}"]:checked`)?.value;
+  if (!policy[fieldKey]) policy[fieldKey] = { field_name: fieldKey };
+  policy[fieldKey].visibility = val;
+  updatePreview();
+}
+
+function updatePreview() {
+  const previewEl = document.getElementById('employer-preview');
+  const rows = FIELDS.map(f => {
+    const p = policy[f.key] || { visibility: 'always_show' };
+    const hidden = p.visibility === 'always_hide';
+    const adminDec = p.visibility === 'admin_decision';
+    return `<div class="pf-row">
+      <span class="pf-key">${f.label}</span>
+      ${hidden
+        ? '<span class="pf-hidden">Hidden by policy</span>'
+        : adminDec
+        ? '<span class="pf-hidden" style="color:var(--ax-pending)">Requires admin approval</span>'
+        : `<span class="pf-val">${SAMPLE[f.key] || '—'}</span>`}
+    </div>`;
+  }).join('');
+
+  const requireApproval = document.getElementById('require-approval')?.checked;
+  const roleFilter = document.getElementById('role-filter')?.value;
+
+  previewEl.innerHTML = rows + `
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--ax-border);font-size:11px;color:var(--ax-subtle)">
+      Role filter: <strong style="color:var(--ax-muted)">${roleFilter === 'all' ? 'All verifiers' : roleFilter}</strong>
+      ${requireApproval ? '· <span style="color:var(--ax-pending)">Admin approval required</span>' : ''}
+    </div>`;
+}
+
+async function savePolicy() {
+  const policyArray = FIELDS.map(f => {
+    const val = document.querySelector(`input[name="vis_${f.key}"]:checked`)?.value || 'always_show';
+    return {
+      field_name: f.key,
+      visibility: val,
+      role_filter: document.getElementById('role-filter')?.value || 'all',
+      require_approval: document.getElementById('require-approval')?.checked ? 1 : 0,
+    };
+  });
+
+  try {
+    await API.call('PUT', '/disclosure-policy', { policy: policyArray });
+    toast('Disclosure policy saved', 'success');
+  } catch (err) {
+    toast('Failed to save policy: ' + err.message, 'error');
+  }
+}
+
+loadPolicy();
+</script>
+</body>
+</html>

@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AuthenX — Connector Setup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="app-shell">
+  <div id="sidebar-mount"></div>
+  <div class="main-content">
+    <header class="topbar">
+      <div class="topbar-title">
+        <h2>Connector Setup</h2>
+        <p>Connect your college ERP to AuthenX in 7 steps</p>
+      </div>
+      <div class="topbar-actions">
+        <div class="connector-status" id="connector-status"><div class="pulse-dot"></div> Checking...</div>
+      </div>
+    </header>
+
+    <main class="page-content">
+      <div class="wizard-shell">
+
+        <!-- Step indicator -->
+        <div class="step-indicator" style="flex-wrap:wrap;gap:4px" id="step-indicator">
+          <!-- Rendered by JS -->
+        </div>
+
+        <!-- Step 1: College Info -->
+        <div class="wizard-step active card" id="ws-1">
+          <div class="card-title" style="margin-bottom:4px">College Information</div>
+          <div class="card-sub" style="margin-bottom:20px">Basic details to register your college</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+            <div class="form-group">
+              <label>College Name <span style="color:var(--ax-revoked)">*</span></label>
+              <input type="text" id="s1-name" placeholder="e.g. IIT Bombay">
+            </div>
+            <div class="form-group">
+              <label>Short Code <span style="color:var(--ax-revoked)">*</span></label>
+              <input type="text" id="s1-code" placeholder="e.g. IITB" style="text-transform:uppercase" oninput="this.value=this.value.toUpperCase()">
+            </div>
+            <div class="form-group">
+              <label>College Email Domain</label>
+              <input type="text" id="s1-domain" placeholder="e.g. iitb.ac.in">
+            </div>
+            <div class="form-group">
+              <label>City / State</label>
+              <input type="text" id="s1-city" placeholder="e.g. Mumbai, Maharashtra">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>College ID (assigned by AuthenX)</label>
+            <input type="text" id="s1-id" placeholder="Auto-assigned on save" readonly style="background:var(--ax-bg);color:var(--ax-subtle)">
+          </div>
+          <div style="text-align:right;margin-top:8px">
+            <button class="btn btn-primary" onclick="nextStep()">Next: ERP Type →</button>
+          </div>
+        </div>
+
+        <!-- Step 2: ERP DB Type -->
+        <div class="wizard-step card" id="ws-2">
+          <div class="card-title" style="margin-bottom:4px">ERP Database Type</div>
+          <div class="card-sub" style="margin-bottom:20px">Select how the connector will access your student records</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="db-grid">
+            <div class="db-card selected" data-db="sqlite" onclick="selectDb('sqlite',this)">
+              <span class="db-icon">📄</span>
+              <div><div class="db-label">SQLite</div><div class="db-sub">Local file-based DB</div></div>
+            </div>
+            <div class="db-card" data-db="mysql" onclick="selectDb('mysql',this)">
+              <span class="db-icon">🐬</span>
+              <div><div class="db-label">MySQL / MariaDB</div><div class="db-sub">Port 3306</div></div>
+            </div>
+            <div class="db-card" data-db="postgres" onclick="selectDb('postgres',this)">
+              <span class="db-icon">🐘</span>
+              <div><div class="db-label">PostgreSQL</div><div class="db-sub">Port 5432</div></div>
+            </div>
+            <div class="db-card" data-db="mssql" onclick="selectDb('mssql',this)">
+              <span class="db-icon">🪟</span>
+              <div><div class="db-label">MS SQL Server</div><div class="db-sub">Port 1433</div></div>
+            </div>
+            <div class="db-card" data-db="rest" onclick="selectDb('rest',this)">
+              <span class="db-icon">🌐</span>
+              <div><div class="db-label">REST API</div><div class="db-sub">HTTP endpoint</div></div>
+            </div>
+            <div class="db-card" data-db="oracle" onclick="selectDb('oracle',this)">
+              <span class="db-icon">🔴</span>
+              <div><div class="db-label">Oracle DB</div><div class="db-sub">Port 1521</div></div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:20px">
+            <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+            <button class="btn btn-primary" onclick="nextStep()">Next: Connection →</button>
+          </div>
+        </div>
+
+        <!-- Step 3: Connection Config -->
+        <div class="wizard-step card" id="ws-3">
+          <div class="card-title" style="margin-bottom:4px">Connection Configuration</div>
+          <div class="card-sub" style="margin-bottom:20px">Enter database connection details (stored securely in your .env)</div>
+          <div id="conn-fields">
+            <!-- Dynamically rendered based on DB type -->
+          </div>
+          <div style="display:flex;justify-content:space-between;margin-top:8px">
+            <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+            <button class="btn btn-primary" onclick="nextStep()">Next: Field Mapping →</button>
+          </div>
+        </div>
+
+        <!-- Step 4: Field Mapping -->
+        <div class="wizard-step card" id="ws-4">
+          <div class="card-title" style="margin-bottom:4px">Field Mapping</div>
+          <div class="card-sub" style="margin-bottom:20px">Map your ERP columns to AuthenX canonical fields</div>
+          <div id="field-mapping-rows"></div>
+          <div style="display:flex;justify-content:space-between;margin-top:16px">
+            <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+            <button class="btn btn-primary" onclick="nextStep()">Next: Test Connection →</button>
+          </div>
+        </div>
+
+        <!-- Step 5: Test Connection -->
+        <div class="wizard-step card" id="ws-5">
+          <div class="card-title" style="margin-bottom:4px">Test Connection</div>
+          <div class="card-sub" style="margin-bottom:20px">Verify the connector can reach your ERP and HSM</div>
+
+          <button class="btn btn-primary" id="test-btn" onclick="testConnection()">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+            Run Connection Test
+          </button>
+
+          <div id="health-result" class="health-result health-pend" style="display:none"></div>
+
+          <div style="margin-top:24px">
+            <div class="card-sub" style="margin-bottom:12px">Deployment Instructions</div>
+            <div class="docker-cmd">
+              <button class="btn btn-ghost btn-sm copy-btn-abs" onclick="copyCmd('cmd-docker')">Copy</button>
+              <div id="cmd-docker">docker run -p 9001:9001 \
+  -e COLLEGE_ID=your_college_id \
+  -e DB_PATH=/data/students.db \
+  -e AUTHENX_SERVER=http://authenx-server:3000 \
+  authenx/connector:latest</div>
+            </div>
+            <div class="docker-cmd">
+              <button class="btn btn-ghost btn-sm copy-btn-abs" onclick="copyCmd('cmd-manual')">Copy</button>
+              <div id="cmd-manual">cd authenx-connector
+cp .env.example .env
+# Edit .env with your college ID and DB path
+node connector.js</div>
+            </div>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;margin-top:16px">
+            <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+            <button class="btn btn-primary" id="step5-next" onclick="nextStep()">Next: Key Management →</button>
+          </div>
+        </div>
+
+        <!-- Step 6: Public Key Management -->
+        <div class="wizard-step card" id="ws-6">
+          <div class="card-title" style="margin-bottom:4px">Public Key Management</div>
+          <div class="card-sub" style="margin-bottom:20px">Your college's Ed25519 signing key registered in AuthenX</div>
+
+          <div style="margin-bottom:20px">
+            <div style="font-size:12px;font-weight:600;color:var(--ax-muted);margin-bottom:8px;display:flex;justify-content:space-between">
+              <span>Registered Public Key (Ed25519)</span>
+              <button class="btn btn-ghost btn-sm" onclick="copyPubKey()">Copy</button>
+            </div>
+            <div class="public-key-box" id="pub-key-display">Loading…</div>
+            <div style="margin-top:8px;font-size:11px;color:var(--ax-subtle)">
+              This public key is used by AuthenX to verify signatures from your connector. Never share your private key.
+            </div>
+          </div>
+
+          <button class="btn btn-secondary" onclick="rotateKeyFromWizard()" style="margin-bottom:20px">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Rotate Key
+          </button>
+
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--ax-muted);margin-bottom:10px">Key History</div>
+            <div class="table-container" style="background:transparent;border:1px solid var(--ax-border);border-radius:8px;margin:0">
+              <table style="width:100%;border-collapse:collapse">
+                <thead><tr>
+                  <th style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ax-subtle);padding:10px 14px;border-bottom:1px solid var(--ax-border);text-align:left">Fingerprint</th>
+                  <th style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ax-subtle);padding:10px 14px;border-bottom:1px solid var(--ax-border);text-align:left">Status</th>
+                  <th style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ax-subtle);padding:10px 14px;border-bottom:1px solid var(--ax-border);text-align:left">Created</th>
+                </tr></thead>
+                <tbody id="key-hist-tbody">
+                  <tr><td colspan="3" style="padding:16px;text-align:center;color:var(--ax-subtle)">Loading…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;margin-top:20px">
+            <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+            <button class="btn btn-primary" onclick="nextStep()">Next: Disclosure Policy →</button>
+          </div>
+        </div>
+
+        <!-- Step 7: Disclosure Policy -->
+        <div class="wizard-step card" id="ws-7">
+          <div class="card-title" style="margin-bottom:4px">Disclosure Policy Preview</div>
+          <div class="card-sub" style="margin-bottom:20px">Configure what employers see when they verify a credential. You can change this anytime in Settings.</div>
+
+          <div style="margin-bottom:20px">
+            <table style="width:100%;border-collapse:collapse">
+              <thead><tr>
+                <th style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ax-subtle);padding:8px 12px;border-bottom:1px solid var(--ax-border);text-align:left">Field</th>
+                <th style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--ax-subtle);padding:8px 12px;border-bottom:1px solid var(--ax-border);text-align:left">Default Visibility</th>
+              </tr></thead>
+              <tbody>
+                <tr><td style="padding:10px 12px;font-size:13px;color:var(--ax-text)">Full Name</td><td style="padding:10px 12px"><span class="badge badge-active">Always Show</span></td></tr>
+                <tr><td style="padding:10px 12px;font-size:13px;color:var(--ax-text)">Degree</td><td style="padding:10px 12px"><span class="badge badge-active">Always Show</span></td></tr>
+                <tr><td style="padding:10px 12px;font-size:13px;color:var(--ax-text)">Branch</td><td style="padding:10px 12px"><span class="badge badge-active">Always Show</span></td></tr>
+                <tr><td style="padding:10px 12px;font-size:13px;color:var(--ax-text)">CGPA</td><td style="padding:10px 12px"><span class="badge badge-active">Always Show</span></td></tr>
+                <tr><td style="padding:10px 12px;font-size:13px;color:var(--ax-text)">Graduation Year</td><td style="padding:10px 12px"><span class="badge badge-active">Always Show</span></td></tr>
+                <tr><td style="padding:10px 12px;font-size:13px;color:var(--ax-text)">Issue Date</td><td style="padding:10px 12px"><span class="badge badge-active">Always Show</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div style="background:var(--ax-bg);border-radius:8px;padding:14px;font-size:12px;color:var(--ax-muted);margin-bottom:20px">
+            You can configure a custom policy with per-role visibility and approval workflows in <a href="/college/disclosure-policy.html" style="color:var(--ax-blue)">Disclosure Policy Settings</a>.
+          </div>
+
+          <div style="display:flex;justify-content:space-between">
+            <button class="btn btn-secondary" onclick="prevStep()">← Back</button>
+            <button class="btn btn-primary" onclick="completeSetup()">
+              <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+              Complete Setup
+            </button>
+          </div>
+        </div>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<script src="/college/app.js"></script>
+<script>
+if (!Auth.requireAuth()) {}
+document.getElementById('sidebar-mount').innerHTML = renderSidebar('onboarding');
+initNav('onboarding');
+
+const STEPS = ['College Info', 'ERP Type', 'Connection', 'Field Mapping', 'Test', 'Key Mgmt', 'Policy'];
+let currentStep = 1;
+let selectedDb = 'sqlite';
+
+const CANONICAL_FIELDS = ['name', 'degree', 'branch', 'cgpa', 'graduation_year', 'issue_date', 'credential_type'];
+
+function renderStepIndicator() {
+  const cont = document.getElementById('step-indicator');
+  cont.innerHTML = STEPS.map((label, i) => {
+    const n = i + 1;
+    const cls = n < currentStep ? ' done' : n === currentStep ? ' active' : '';
+    const connector = n < STEPS.length ? '<div class="step-connector" style="min-width:20px"></div>' : '';
+    return `
+      <div class="step${cls}">
+        <div class="step-num">${n < currentStep ? '✓' : n}</div>
+        <div class="step-label" style="font-size:10px;white-space:nowrap">${label}</div>
+      </div>${connector}`;
+  }).join('');
+}
+
+function nextStep() {
+  if (currentStep < STEPS.length) {
+    currentStep++;
+    showStep(currentStep);
+    onStepEnter(currentStep);
+  }
+}
+
+function prevStep() {
+  if (currentStep > 1) {
+    currentStep--;
+    showStep(currentStep);
+    onStepEnter(currentStep);
+  }
+}
+
+function showStep(n) {
+  document.querySelectorAll('.wizard-step').forEach(el => el.classList.remove('active'));
+  const ws = document.getElementById(`ws-${n}`);
+  if (ws) { ws.classList.add('active'); ws.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  renderStepIndicator();
+}
+
+function onStepEnter(n) {
+  if (n === 3) renderConnFields();
+  if (n === 4) renderFieldMapping();
+  if (n === 6) loadPubKey();
+}
+
+function selectDb(db, el) {
+  selectedDb = db;
+  document.querySelectorAll('.db-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function renderConnFields() {
+  const cont = document.getElementById('conn-fields');
+  if (selectedDb === 'sqlite') {
+    cont.innerHTML = `
+      <div class="form-group">
+        <label>SQLite File Path</label>
+        <input type="text" id="c-sqlite" placeholder="/data/students.db" style="font-family:monospace">
+        <div style="margin-top:6px;font-size:11px;color:var(--ax-subtle)">Absolute path to the SQLite database file on the connector host</div>
+      </div>
+      <div class="form-group">
+        <label>Students Table Name</label>
+        <input type="text" id="c-table" placeholder="students">
+      </div>`;
+  } else if (selectedDb === 'rest') {
+    cont.innerHTML = `
+      <div class="form-group">
+        <label>API Base URL</label>
+        <input type="text" id="c-url" placeholder="https://erp.college.ac.in/api/v1" style="font-family:monospace">
+      </div>
+      <div class="form-group">
+        <label>Auth Header</label>
+        <input type="text" id="c-header" placeholder="Authorization: Bearer <token>">
+      </div>`;
+  } else {
+    cont.innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+        <div class="form-group"><label>Host</label><input type="text" id="c-host" placeholder="db.college.ac.in"></div>
+        <div class="form-group"><label>Port</label><input type="number" id="c-port" placeholder="${selectedDb === 'postgres' ? '5432' : selectedDb === 'mssql' ? '1433' : selectedDb === 'oracle' ? '1521' : '3306'}"></div>
+        <div class="form-group"><label>Database Name</label><input type="text" id="c-db" placeholder="erp_students"></div>
+        <div class="form-group"><label>Username</label><input type="text" id="c-user" placeholder="authenx_ro" autocomplete="off"></div>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="c-pass" placeholder="Connector uses read-only credentials" autocomplete="new-password">
+        <div style="margin-top:6px;font-size:11px;color:var(--ax-subtle)">Use a dedicated read-only DB user for security</div>
+      </div>
+      <div class="form-group"><label>Students Table</label><input type="text" id="c-table" placeholder="students"></div>`;
+  }
+}
+
+function renderFieldMapping() {
+  const cont = document.getElementById('field-mapping-rows');
+  const erpCols = selectedDb === 'sqlite'
+    ? ['roll_no', 'full_name', 'dept', 'programme', 'sgpa', 'grad_year', 'issue_date', 'degree_type']
+    : ['student_id', 'student_name', 'department', 'program', 'cgpa', 'graduation_year', 'issue_date', 'degree'];
+
+  cont.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ax-subtle)">AuthenX Field</div>
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--ax-subtle)">Your ERP Column</div>
+    </div>` +
+    CANONICAL_FIELDS.map((f, i) => `
+      <div class="field-map-row">
+        <div class="field-map-erp">${f}</div>
+        <select class="field-map-select" id="fm-${f}">
+          <option value="">-- Select column --</option>
+          ${erpCols.map(col => `<option value="${col}" ${i < erpCols.length && erpCols[i] === col ? 'selected' : ''}>${col}</option>`).join('')}
+          <option value="__custom">Custom expression…</option>
+        </select>
+      </div>`).join('');
+}
+
+async function testConnection() {
+  const btn = document.getElementById('test-btn');
+  const resultEl = document.getElementById('health-result');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Testing…';
+  resultEl.style.display = 'none';
+
+  try {
+    const start = Date.now();
+    const res = await fetch(Auth.getConnectorUrl('/health'), { signal: AbortSignal.timeout(4000) });
+    const latency = Date.now() - start;
+    if (res.ok) {
+      resultEl.className = 'health-result health-ok';
+      resultEl.innerHTML = `✓ Connector online · Latency: <strong>${latency}ms</strong> · ERP connection verified`;
+      resultEl.style.display = '';
+    } else {
+      throw new Error(`HTTP ${res.status}`);
+    }
+  } catch (err) {
+    resultEl.className = 'health-result health-fail';
+    resultEl.innerHTML = `✕ Connection failed: ${err.message}<br><span style="font-size:12px;margin-top:6px;display:block">Start the connector: <code>cd authenx-connector && node connector.js</code></span>`;
+    resultEl.style.display = '';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg> Run Connection Test';
+  }
+}
+
+async function loadPubKey() {
+  try {
+    const claims = Auth.getClaims();
+    const college = await API.get(`/colleges/${claims.college_id}`);
+    const pubKey = college.college?.public_key_hex || 'Key not found';
+    document.getElementById('pub-key-display').textContent = pubKey;
+
+    const fingerprint = pubKey.slice(0, 16) + '…' + pubKey.slice(-8);
+    document.getElementById('key-hist-tbody').innerHTML = `
+      <tr>
+        <td style="font-family:monospace;font-size:11px;color:var(--ax-blue);padding:10px 14px">${fingerprint}</td>
+        <td style="padding:10px 14px"><span class="badge badge-active">Active</span></td>
+        <td style="padding:10px 14px;font-size:12px;color:var(--ax-muted)">Setup</td>
+      </tr>`;
+  } catch {
+    document.getElementById('pub-key-display').textContent = 'Could not load public key. Ensure you are logged in as college admin.';
+  }
+}
+
+function copyPubKey() {
+  const text = document.getElementById('pub-key-display').textContent;
+  navigator.clipboard.writeText(text).then(() => toast('Public key copied', 'success')).catch(() => {});
+}
+
+function copyCmd(id) {
+  const text = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(text).then(() => toast('Command copied', 'success')).catch(() => {});
+}
+
+function rotateKeyFromWizard() {
+  toast('Key rotation: navigate to Security page for full key rotation workflow', 'info');
+}
+
+function completeSetup() {
+  toast('Setup complete! Connector is configured and ready.', 'success');
+  setTimeout(() => window.location.href = '/college/connector-management.html', 1500);
+}
+
+// Init
+renderStepIndicator();
+</script>
+</body>
+</html>

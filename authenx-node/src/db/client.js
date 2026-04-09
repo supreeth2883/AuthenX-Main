@@ -19,7 +19,23 @@ function getDb() {
   _db.exec('PRAGMA journal_mode=WAL');
   _db.exec('PRAGMA foreign_keys=ON');
   _db.exec(SQL_SCHEMA);
+  runMigrations(_db);
   return _db;
+}
+
+/** Add columns/tables that may not exist in older databases */
+function runMigrations(db) {
+  const existingCols = db.prepare("PRAGMA table_info(verification_tokens)").all().map(r => r.name);
+  const addIfMissing = (col, def) => {
+    if (!existingCols.includes(col)) {
+      try { db.exec(`ALTER TABLE verification_tokens ADD COLUMN ${col} ${def}`); } catch {}
+    }
+  };
+  addIfMissing('superseded_by',       'TEXT');
+  addIfMissing('correction_token_id', 'TEXT');
+  addIfMissing('verification_count',  'INTEGER NOT NULL DEFAULT 0');
+  addIfMissing('last_verified_at',    'TEXT');
+  addIfMissing('last_result',         'TEXT');
 }
 
 /** Run a SELECT and return all rows */

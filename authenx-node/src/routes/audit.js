@@ -72,4 +72,63 @@ function getStats(req, res) {
   res.end(JSON.stringify({ stats }));
 }
 
-module.exports = { getAuditLog, getStats };
+/**
+ * GET /v1/audit/export?format=csv|json&from=&to=
+ * Exports audit log as CSV or JSON for compliance.
+ */
+function exportAuditLog(req, res, urlObj) {
+  const claims = requireAuth(req, res);
+  if (!claims) return;
+  if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
+
+  const format = urlObj.searchParams.get('format') || 'json';
+  const from   = urlObj.searchParams.get('from') || null;
+  const to     = urlObj.searchParams.get('to')   || null;
+
+  let whereExtra = '';
+  const params = [];
+
+  if (claims.role === 'college_admin') {
+    whereExtra += ' AND t.college_id = ?';
+    params.push(claims.college_id);
+  }
+  if (from) { whereExtra += ' AND r.created_at >= ?'; params.push(from); }
+  if (to)   { whereExtra += ' AND r.created_at <= ?'; params.push(to + 'T23:59:59'); }
+
+  const rows = query(`
+    SELECT r.id, r.request_type, r.result, r.hash_match, r.sig_valid,
+           r.latency_ms, r.employer_name, r.created_at,
+           t.id as token_id, t.credential_type, t.student_ref_token,
+           c.name as college_name, c.short_code
+    FROM verification_requests r
+    JOIN verification_tokens t ON t.id = r.token_id
+    JOIN colleges c ON c.id = t.college_id
+    WHERE 1=1 ${whereExtra}
+    ORDER BY r.created_at DESC
+    LIMIT 10000
+  `, params);
+
+  if (format === 'csv') {
+    const headers = ['id','request_type','result','hash_match','sig_valid','latency_ms',
+                     'employer_name','created_at','token_id','credential_type',
+                     'student_ref_token','college_name','short_code'];
+    const csv = [
+      headers.join(','),
+      ...rows.map(r => headers.map(h => JSON.stringify(r[h] ?? '')).join(','))
+    ].join('\n');
+
+    res.writeHead(200, {
+      'Content-Type': 'text/csv',
+      'Content-Disposition': `attachment; filename="authenx-audit-${Date.now()}.csv"`
+    });
+    return res.end(csv);
+  }
+
+  res.writeHead(200, {
+    'Content-Type': 'application/json',
+    'Content-Disposition': `attachment; filename="authenx-audit-${Date.now()}.json"`
+  });
+  res.end(JSON.stringify({ exported_at: new Date().toISOString(), count: rows.length, events: rows }));
+}
+
+module.exports = { getAuditLog, getStats, exportAuditLog };
