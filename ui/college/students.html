@@ -23,7 +23,7 @@
           <div class="connector-status" id="connector-status">
             <div class="pulse-dot"></div> Checking...
           </div>
-          <a href="/college/issue.html" class="btn btn-primary">
+          <a href="issue.html" class="btn btn-primary">
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>
@@ -77,7 +77,7 @@
     </div>
   </div>
 
-  <script src="/college/app.js"></script>
+  <script src="app.js"></script>
   <script>
     if (!Flow.guard('students')) { }
     document.getElementById('sidebar-mount').innerHTML = renderSidebar('students');
@@ -124,7 +124,7 @@
       <div class="empty-state">
         <h3>No students found</h3>
         <p>Issue a credential to see students here</p>
-        <a href="/college/issue.html" class="btn btn-primary">Issue Credential</a>
+        <a href="issue.html" class="btn btn-primary">Issue Credential</a>
       </div>
     </td></tr>`;
         return;
@@ -133,16 +133,16 @@
       tbody.innerHTML = tokens.map(t => `
     <tr>
       <td>
-        <div style="font-family:monospace;font-size:12px;font-weight:600;color:var(--ax-text)">${t.student_ref_token}</div>
-        <div style="font-size:11px;color:var(--ax-subtle)">${t.id?.slice(0, 8)}…</div>
+        <div style="font-family:monospace;font-size:12px;font-weight:600;color:var(--ax-text)">${esc(t.student_ref_token)}</div>
+        <div style="font-size:11px;color:var(--ax-subtle)">${esc((t.id || '').slice(0, 8))}…</div>
       </td>
-      <td><span style="font-size:12px">${(t.credential_type || '—').replace(/_/g, ' ')}</span></td>
+      <td><span style="font-size:12px">${esc((t.credential_type || '—').replace(/_/g, ' '))}</span></td>
       <td style="font-size:12px">${formatDate(t.issued_at)}</td>
       <td>${statusBadge(t.status)}</td>
       <td>
         <div style="display:flex;gap:6px;align-items:center">
-          <a href="/college/tokens.html" class="btn btn-ghost btn-sm">View</a>
-          ${t.status === 'active' ? `<button class="btn btn-danger btn-sm" onclick="revokeToken('${t.id}','${t.student_ref_token}')">Revoke</button>` : '<span style="font-size:12px;color:var(--ax-subtle)">Revoked</span>'}
+          <a href="tokens.html" class="btn btn-ghost btn-sm">View</a>
+          ${t.status === 'active' ? `<button class="btn btn-danger btn-sm" data-token-id="${esc(t.id)}" data-ref="${esc(t.student_ref_token)}" onclick="revokeToken(this.dataset.tokenId,this.dataset.ref)">Revoke</button>` : '<span style="font-size:12px;color:var(--ax-subtle)">Revoked</span>'}
         </div>
       </td>
     </tr>`).join('');
@@ -151,7 +151,7 @@
     function revokeToken(tokenId, ref) {
       showModal({
         title: 'Revoke Credential',
-        body: `<p>You are about to revoke the credential for <strong>${ref}</strong>.</p>
+        body: `<p>You are about to revoke the credential for <strong>${esc(ref)}</strong>.</p>
            <p style="margin-top:10px;color:var(--ax-revoked)">⚠ This cannot be undone. The credential will immediately fail future verifications.</p>
            <div class="form-group" style="margin-top:16px">
              <label>Reason for Revocation</label>

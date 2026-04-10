@@ -111,7 +111,7 @@ async function main() {
   check(caLogin.status === 200, 'College admin login');
   const caAuth = { Authorization: `Bearer ${caLogin.body.token}` };
 
-  const issueRes = await request(API_PORT, 'POST', '/v1/tokens/issue', {
+  const issuePayload = {
     college_id:         collegeId,
     student_ref_token:  'stu_ref_001',
     name:               connRes.body.name,
@@ -122,14 +122,36 @@ async function main() {
     graduation_year:    String(connRes.body.graduation_year),
     issue_date:         connRes.body.issue_date,
     issuance_signature: connRes.body.issuance_signature,
-  }, caAuth);
-  // 201 = newly issued, 409 = already active (both are acceptable for smoke test)
+  };
+
+  let issueRes = await request(API_PORT, 'POST', '/v1/tokens/issue', issuePayload, caAuth);
+
+  // If a token already exists, revoke it and re-issue to obtain a fresh AuthenX Code.
+  if (issueRes.status === 409) {
+    const tokensRes = await request(API_PORT, 'GET', '/v1/tokens', null, caAuth);
+    check(tokensRes.status === 200, 'GET /v1/tokens (reissue flow)');
+
+    const existing = (tokensRes.body.tokens || []).find(t =>
+      t.college_id === collegeId &&
+      t.student_ref_token === 'stu_ref_001' &&
+      t.status === 'active'
+    );
+    check(!!existing, 'Existing active token found');
+
+    if (existing) {
+      const revokeRes = await request(API_PORT, 'POST', '/v1/tokens/revoke', {
+        token_id: existing.id,
+        reason: 'smoke_test_reissue'
+      }, caAuth);
+      check(revokeRes.status === 200, 'POST /v1/tokens/revoke (reissue flow)');
+
+      issueRes = await request(API_PORT, 'POST', '/v1/tokens/issue', issuePayload, caAuth);
+    }
+  }
+
+  // 201 = newly issued, 409 = still conflicting after retry
   check(issueRes.status === 201 || issueRes.status === 409, 'POST /v1/tokens/issue');
-  const authenxCode = issueRes.body.authenx_code
-    || require('node:fs').existsSync(require('node:path').join(__dirname, 'authenx-node', 'seed_codes.json'))
-      ? require(require('node:path').join(__dirname, 'authenx-node', 'seed_codes.json'))
-          .find(c => c.student_ref_token === 'stu_ref_001')?.authenx_code
-      : null;
+  const authenxCode = issueRes.body.authenx_code || null;
   check(!!authenxCode, 'AuthenX Code available');
 
   if (!authenxCode) {

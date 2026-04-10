@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
-<script src="/shared/authenx-code.js"></script>
+<script src="../shared/authenx-code.js"></script>
 </head>
 <body>
 <div class="app-shell">
@@ -19,7 +19,7 @@
         <p>AuthenX Code generated and ready to share</p>
       </div>
       <div class="topbar-actions">
-        <a href="/college/issue.html" class="btn btn-primary">Issue Another</a>
+        <a href="issue.html" class="btn btn-primary">Issue Another</a>
       </div>
     </header>
 
@@ -110,8 +110,8 @@
 
         <!-- Actions -->
         <div style="display:flex;gap:12px;margin-top:20px">
-          <a href="/college/tokens.html" class="btn btn-secondary">View All Tokens</a>
-          <a href="/college/issue.html" class="btn btn-primary" style="flex:1;justify-content:center">Issue Another Credential</a>
+          <a href="tokens.html" class="btn btn-secondary">View All Tokens</a>
+          <a href="issue.html" class="btn btn-primary" style="flex:1;justify-content:center">Issue Another Credential</a>
         </div>
 
       </div>
@@ -119,7 +119,7 @@
   </div>
 </div>
 
-<script src="/college/app.js"></script>
+<script src="app.js"></script>
 <script>
 if (!Flow.guard('codeIssued')) {}
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('issue');
@@ -132,8 +132,14 @@ const name      = sessionStorage.getItem('issued_name');
 
 if (!code) {
   // No code in session — redirect
-  window.location.href = '/college/issue.html';
+  window.location.href = 'issue.html';
 }
+
+// Clear sensitive credential data from sessionStorage now that it's been read
+sessionStorage.removeItem('issued_code');
+sessionStorage.removeItem('issued_token_id');
+sessionStorage.removeItem('issued_ref');
+sessionStorage.removeItem('issued_name');
 
 // Populate UI
 document.getElementById('code-text').textContent = code;

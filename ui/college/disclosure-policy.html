@@ -116,7 +116,7 @@
   </div>
 </div>
 
-<script src="/college/app.js"></script>
+<script src="app.js"></script>
 <script>
 if (!Flow.guard('disclosure')) {}
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('disclosure');
@@ -247,7 +247,7 @@ async function savePolicy() {
 async function saveAndContinue() {
   try {
     await savePolicy();
-    setTimeout(() => window.location.href = '/college/dashboard.html', 1000);
+    setTimeout(() => window.location.href = 'dashboard.html', 1000);
   } catch {}
 }
 

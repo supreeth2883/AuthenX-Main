@@ -123,6 +123,10 @@
 </div>
 
 <div class="container">
+  <div class="card" style="padding:14px 18px;margin-bottom:18px;background:#eef1ff;border-color:#d9dfff;">
+    <div style="font-size:12px;font-weight:700;color:#4458c0;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px;">Frontend-only super credential</div>
+    <div style="font-size:13px;color:#1a1f36;">Email: <b>superadmin@authenx.in</b> | Password: <b>1234</b></div>
+  </div>
 
   <!-- Stepper -->
   <div class="stepper">
@@ -435,11 +439,16 @@
 
 </div><!-- /container -->
 
+<script src="../shared/offline-auth.js"></script>
 <script>
 const API = 'http://localhost:3000';
 let selectedDb = 'sqlite';
 let onboardedCollege = null;
 let jwt = localStorage.getItem('authenx_token');
+
+if (!jwt && window.AuthenXOfflineAuth) {
+  jwt = window.AuthenXOfflineAuth.seedAdminSession().token;
+}
 
 // ─── Step navigation ──────────────────────────────────────────────────────────
 function goToStep(n) {

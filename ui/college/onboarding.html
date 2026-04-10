@@ -224,7 +224,7 @@ node connector.js</div>
           </div>
 
           <div style="background:var(--ax-bg);border-radius:8px;padding:14px;font-size:12px;color:var(--ax-muted);margin-bottom:20px">
-            You can configure a custom policy with per-role visibility and approval workflows in <a href="/college/disclosure-policy.html" style="color:var(--ax-blue)">Disclosure Policy Settings</a>.
+            You can configure a custom policy with per-role visibility and approval workflows in <a href="disclosure-policy.html" style="color:var(--ax-blue)">Disclosure Policy Settings</a>.
           </div>
 
           <div style="display:flex;justify-content:space-between">
@@ -241,7 +241,7 @@ node connector.js</div>
   </div>
 </div>
 
-<script src="/college/app.js"></script>
+<script src="app.js"></script>
 <script>
 if (!Flow.guard('onboarding')) {}
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('onboarding');
@@ -440,7 +440,15 @@ async function testConnection() {
     }
   } catch (err) {
     resultEl.className = 'health-result health-fail';
-    resultEl.innerHTML = `✕ Connection failed: ${err.message}<br><span style="font-size:12px;margin-top:6px;display:block">Start the connector: <code>cd authenx-connector && node connector.js</code></span>`;
+    resultEl.textContent = '';
+    const errLine = document.createElement('span');
+    errLine.textContent = '✕ Connection failed: ' + err.message;
+    const hint = document.createElement('span');
+    hint.style.cssText = 'font-size:12px;margin-top:6px;display:block';
+    hint.textContent = 'Start the connector: cd authenx-connector && node connector.js';
+    resultEl.appendChild(errLine);
+    resultEl.appendChild(document.createElement('br'));
+    resultEl.appendChild(hint);
     resultEl.style.display = '';
   } finally {
     btn.disabled = false;
@@ -487,7 +495,7 @@ function completeSetup() {
       await persistProgress({ onboarding_completed: 1 });
       localStorage.setItem('ax_onboarded', '1');
       toast('Setup complete! Connector config saved to backend + DB.', 'success');
-      setTimeout(() => window.location.href = '/college/connector-management.html', 1200);
+      setTimeout(() => window.location.href = 'connector-management.html', 1200);
     } catch (e) {
       toast('Could not save setup: ' + e.message, 'error', 6000);
     }

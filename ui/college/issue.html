@@ -166,7 +166,7 @@
   </div>
 </div>
 
-<script src="/college/app.js"></script>
+<script src="app.js"></script>
 <script>
 if (!Flow.guard('issue')) {}
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('issue');
@@ -358,7 +358,7 @@ async function issueCredential() {
     sessionStorage.setItem('issued_token_id', issueResp.token_id);
     sessionStorage.setItem('issued_ref', fetchedData.student_ref_token);
     sessionStorage.setItem('issued_name', studentData.name);
-    window.location.href = '/college/code-issued.html';
+    window.location.href = 'code-issued.html';
 
   } catch (err) {
     toast('Issue failed: ' + err.message, 'error', 6000);

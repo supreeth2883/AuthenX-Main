@@ -13,8 +13,8 @@ const Auth = {
     catch { return null; }
   },
   isLoggedIn() { const c = this.getClaims(); return c && c.exp > Date.now()/1000; },
-  logout() { localStorage.removeItem('ax_emp_token'); window.location.href = '/employer/index.html'; },
-  requireAuth() { if (!this.isLoggedIn()) { window.location.href = '/employer/index.html'; return false; } return true; },
+  logout() { localStorage.removeItem('ax_emp_token'); window.location.href = 'index.html'; },
+  requireAuth() { if (!this.isLoggedIn()) { window.location.href = 'index.html'; return false; } return true; },
 };
 
 const API = {
@@ -24,11 +24,13 @@ const API = {
       headers: {
         'Content-Type': 'application/json',
         ...(Auth.getToken() ? { 'Authorization': `Bearer ${Auth.getToken()}` } : {})
-      }
+      },
+      signal: AbortSignal.timeout(15000)
     };
     if (body) opts.body = JSON.stringify(body);
     const res = await fetch(`${API_BASE}${path}`, opts);
-    const data = await res.json();
+    let data;
+    try { data = await res.json(); } catch { data = {}; }
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
   },
@@ -46,7 +48,11 @@ function toast(message, type = 'info', duration = 4000) {
   }
   const t = document.createElement('div');
   t.className = `toast ${type}`;
-  t.innerHTML = `<span>${type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ'}</span> ${message}`;
+  const icon = type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ';
+  const iconEl = document.createElement('span');
+  iconEl.textContent = icon;
+  t.appendChild(iconEl);
+  t.appendChild(document.createTextNode(' ' + message));
   container.appendChild(t);
   setTimeout(() => { t.style.opacity='0'; t.style.transform='translateX(120%)'; t.style.transition='0.3s'; setTimeout(()=>t.remove(),300); }, duration);
 }
@@ -54,7 +60,7 @@ function toast(message, type = 'info', duration = 4000) {
 function renderNavbar(active) {
   return `
   <nav class="top-nav">
-    <a href="/employer/index.html" class="nav-logo">
+    <a href="index.html" class="nav-logo">
       <div class="mark">AX</div>
       <div>
         <div class="nav-logo-text">AuthenX</div>
@@ -64,9 +70,9 @@ function renderNavbar(active) {
     <div class="nav-actions">
       ${Auth.isLoggedIn()
         ? `<span style="font-size:13px;color:var(--ax-gray-500)">${Auth.getClaims()?.email||''}</span>
-           <a href="/employer/verify.html" class="btn btn-primary btn-sm" style="padding:7px 14px">Verify a Code</a>
+           <a href="verify.html" class="btn btn-primary btn-sm" style="padding:7px 14px">Verify a Code</a>
            <button class="btn btn-secondary" style="padding:7px 14px" onclick="Auth.logout()">Logout</button>`
-        : `<a href="/employer/index.html" class="btn btn-primary" style="padding:7px 14px">Login to Verify →</a>`
+        : `<a href="index.html" class="btn btn-primary" style="padding:7px 14px">Login to Verify →</a>`
       }
     </div>
   </nav>`;

@@ -98,7 +98,7 @@
         <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
         Copy Summary
       </button>
-      <button class="btn btn-secondary btn-lg" onclick="window.location.href = '/employer/verify.html'" style="flex:1;justify-content:center;min-width:140px">
+      <button class="btn btn-secondary btn-lg" onclick="window.location.href = 'verify.html'" style="flex:1;justify-content:center;min-width:140px">
         <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
         Verify Another
       </button>
@@ -108,7 +108,7 @@
 
 <div id="toast-container" class="toast-container"></div>
 
-<script src="/employer/verify.js"></script>
+<script src="verify.js"></script>
 <script>
 if (!Auth.requireAuth()) {}
 document.getElementById('navbar').innerHTML = renderNavbar();
@@ -118,7 +118,7 @@ const liveRaw = sessionStorage.getItem('verify_live');
 const decodeRaw = sessionStorage.getItem('verify_decode');
 
 if (!liveRaw || !decodeRaw) {
-  window.location.href = '/employer/verify.html';
+  window.location.href = 'verify.html';
 }
 
 const liveData = JSON.parse(liveRaw);
@@ -126,7 +126,7 @@ const decodeData = JSON.parse(decodeRaw);
 
 // If not actually verified, redirect to revoked
 if (liveData.result !== 'verified' && liveData.result !== 'fallback_verified') {
-  window.location.href = '/employer/revoked.html';
+  window.location.href = 'revoked.html';
 }
 
 // Fallback Mode Setup

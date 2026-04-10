@@ -1,5 +1,7 @@
 # CLAUDE.md
 
+- codex will review this file after the changes.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What This Project Is

@@ -86,7 +86,7 @@
     </button>
 
     <div style="margin-top:12px;text-align:center">
-      <a href="/employer/verify.html" style="font-size:12px;color:var(--ax-gray-400)">← Back to paste code</a>
+      <a href="verify.html" style="font-size:12px;color:var(--ax-gray-400)">← Back to paste code</a>
     </div>
   </div>
 
@@ -105,7 +105,7 @@
       </div>
     </div>
     <div id="revoked-reason" style="display:none;margin-top:12px;font-size:12px;color:var(--ax-gray-500)"></div>
-    <button class="btn btn-secondary btn-lg" onclick="window.location.href = '/employer/verify.html'" style="width:100%;justify-content:center;margin-top:20px">
+    <button class="btn btn-secondary btn-lg" onclick="window.location.href = 'verify.html'" style="width:100%;justify-content:center;margin-top:20px">
       Verify Another Credential
     </button>
   </div>
@@ -113,7 +113,7 @@
 
 <div id="toast-container" class="toast-container"></div>
 
-<script src="/employer/verify.js"></script>
+<script src="verify.js"></script>
 <script>
 if (!Auth.requireAuth()) {}
 document.getElementById('navbar').innerHTML = renderNavbar('decoding');
@@ -123,7 +123,7 @@ const code = sessionStorage.getItem('verify_code');
 const decodeRaw = sessionStorage.getItem('verify_decode');
 
 if (!code || !decodeRaw) {
-  window.location.href = '/employer/verify.html';
+  window.location.href = 'verify.html';
 }
 
 const decodeData = JSON.parse(decodeRaw);
@@ -237,9 +237,9 @@ async function startLiveVerify() {
     sessionStorage.setItem('verify_live', JSON.stringify(data));
 
     if (data.result === 'verified' || data.result === 'fallback_verified') {
-      window.location.href = '/employer/verified.html';
+      window.location.href = 'verified.html';
     } else if (data.result === 'revoked') {
-      window.location.href = '/employer/revoked.html';
+      window.location.href = 'revoked.html';
     } else {
       throw new Error(data.error || 'Unexpected result: ' + data.result);
     }

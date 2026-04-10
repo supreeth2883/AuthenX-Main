@@ -49,8 +49,8 @@
     </div>
 
     <div style="background:var(--ax-sky);border-radius:8px;padding:12px;margin-bottom:20px;font-size:12px;color:var(--ax-gray-600)">
-      <strong>Demo Account:</strong>
-      <span onclick="fillCreds('admin@authenx.in','Admin@123')" style="cursor:pointer;color:var(--ax-blue);margin-left:8px">Fill credentials ↗</span>
+      <strong>Super Account (Offline + Online):</strong>
+      <span onclick="fillCreds('superadmin@authenx.in','1234')" style="cursor:pointer;color:var(--ax-blue);margin-left:8px">Fill credentials ↗</span>
     </div>
 
     <div id="error-box" style="background:var(--ax-revoked-bg);border:1px solid #FECACA;border-radius:8px;padding:10px 14px;color:#991B1B;font-size:13px;margin-bottom:16px;display:none"></div>
@@ -69,19 +69,20 @@
     </button>
 
     <div style="margin-top:20px;text-align:center;font-size:12px;color:var(--ax-gray-400)">
-      College admin? <a href="/college/index.html" style="color:var(--ax-blue)">Go to College Portal →</a>
+      College admin? <a href="../college/index.html" style="color:var(--ax-blue)">Go to College Portal →</a>
     </div>
   </div>
 </section>
 
 <div id="toast-container" class="toast-container"></div>
 
-<script src="/employer/verify.js"></script>
+<script src="../shared/offline-auth.js"></script>
+<script src="verify.js"></script>
 <script>
 document.getElementById('navbar').innerHTML = renderNavbar();
 
 // Auto-redirect if already logged in
-if (Auth.isLoggedIn()) window.location.href = '/employer/verify.html';
+if (Auth.isLoggedIn()) window.location.href = 'verify.html';
 
 function scrollToLogin() {
   document.getElementById('login-section').scrollIntoView({ behavior: 'smooth' });
@@ -109,6 +110,15 @@ async function doLogin() {
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner"></div> Signing in…';
 
+  const offline = window.AuthenXOfflineAuth?.loginWithSuperCredential(email, password, {
+    role: 'employer'
+  });
+  if (offline) {
+    localStorage.setItem('ax_emp_token', offline.token);
+    window.location.href = 'verify.html';
+    return;
+  }
+
   try {
     const res = await fetch('http://localhost:3000/v1/auth/login', {
       method: 'POST',
@@ -119,7 +129,7 @@ async function doLogin() {
     if (!res.ok) throw new Error(data.error || 'Login failed');
 
     localStorage.setItem('ax_emp_token', data.token);
-    window.location.href = '/employer/verify.html';
+    window.location.href = 'verify.html';
   } catch (err) {
     errBox.textContent = err.message;
     errBox.style.display = '';
