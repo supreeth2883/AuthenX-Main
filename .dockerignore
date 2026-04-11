@@ -1,9 +1,0 @@
-node_modules
-.git
-*.md
-*.log
-logs/
-.env
-.DS_Store
-*.test.js
-wave*-test.js
