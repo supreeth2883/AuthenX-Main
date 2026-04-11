@@ -49,8 +49,8 @@
     </div>
 
     <div style="background:var(--ax-sky);border-radius:8px;padding:12px;margin-bottom:20px;font-size:12px;color:var(--ax-gray-600)">
-      <strong>Super Account (Offline + Online):</strong>
-      <span onclick="fillCreds('superadmin@authenx.in','1234')" style="cursor:pointer;color:var(--ax-blue);margin-left:8px">Fill credentials ↗</span>
+      <strong>Test credentials:</strong>
+      <span onclick="fillCreds('recruiter@infosys.com','Employer@123')" style="cursor:pointer;color:var(--ax-blue);margin-left:8px">Employer ↗</span>
     </div>
 
     <div id="error-box" style="background:var(--ax-revoked-bg);border:1px solid #FECACA;border-radius:8px;padding:10px 14px;color:#991B1B;font-size:13px;margin-bottom:16px;display:none"></div>
@@ -82,6 +82,7 @@
 document.getElementById('navbar').innerHTML = renderNavbar();
 
 // Auto-redirect if already logged in
+if (Auth.getToken() && !Auth.isLoggedIn()) Auth.clearToken();
 if (Auth.isLoggedIn()) window.location.href = 'verify.html';
 
 function scrollToLogin() {
@@ -120,14 +121,8 @@ async function doLogin() {
   }
 
   try {
-    const res = await fetch('http://localhost:3000/v1/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Login failed');
-
+    // API.post uses the resilient base resolver from verify.js (no hardcoded URL)
+    const data = await API.post('/auth/login', { email, password });
     localStorage.setItem('ax_emp_token', data.token);
     window.location.href = 'verify.html';
   } catch (err) {

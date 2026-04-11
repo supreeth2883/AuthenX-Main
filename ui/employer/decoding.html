@@ -189,7 +189,7 @@ async function runChecks() {
     return;
   }
 
-  // All checks passed — show decoded fields
+  // All checks passed — show decoded fields, then auto-run live verify
   await sleep(200);
   showDecodedCard();
 }
@@ -215,16 +215,24 @@ function showDecodedCard() {
   document.getElementById('hash-preview').textContent = hash || 'Not available';
 
   document.getElementById('decoded-card').style.display = '';
-  document.getElementById('action-card').style.display = '';
+
+  // Show the action-card in a "running" state — no button click needed.
+  // Live verification is triggered automatically after a brief pause so the
+  // employer can see all registry checks completed before we proceed.
+  const actionCard = document.getElementById('action-card');
+  actionCard.style.display = '';
+  const btn = document.getElementById('live-verify-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Running live verification…';
+
+  // Auto-trigger: 700 ms pause gives employer time to read the green checks
+  setTimeout(() => startLiveVerify(), 700);
 }
 
 function showRevokedCard(data) {
-  document.getElementById('revoked-card').style.display = '';
-  if (data.revocation_reason) {
-    const el = document.getElementById('revoked-reason');
-    el.textContent = 'Revocation reason: ' + data.revocation_reason;
-    el.style.display = '';
-  }
+  // decodeData is already in sessionStorage (set by verify.html before redirecting here).
+  // revoked.html handles the no-live-data entry point natively — route straight there.
+  window.location.href = 'revoked.html';
 }
 
 async function startLiveVerify() {
@@ -233,7 +241,10 @@ async function startLiveVerify() {
   btn.innerHTML = '<div class="spinner"></div> Contacting college ERP…';
 
   try {
-    const data = await API.post('/verify/live', { authenx_code: code });
+    const data = await API.post('/verify/live', {
+      authenx_code: code,
+      force_live_data: true,
+    });
     sessionStorage.setItem('verify_live', JSON.stringify(data));
 
     if (data.result === 'verified' || data.result === 'fallback_verified') {

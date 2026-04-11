@@ -37,6 +37,16 @@ function runMigrations(db) {
   addIfMissing('last_verified_at',    'TEXT');
   addIfMissing('last_result',         'TEXT');
 
+  // ── colleges table: add onboarding columns if missing (older schema) ──────
+  const collegeCols = db.prepare("PRAGMA table_info(colleges)").all().map(r => r.name);
+  const addCollegeColIfMissing = (col, def) => {
+    if (!collegeCols.includes(col)) {
+      try { db.exec(`ALTER TABLE colleges ADD COLUMN ${col} ${def}`); } catch {}
+    }
+  };
+  addCollegeColIfMissing('admin_email',    'TEXT');
+  addCollegeColIfMissing('connector_port', 'INTEGER NOT NULL DEFAULT 9000');
+
   // ── College registry sync migration ───────────────────────────────────────
   // If the DB was seeded before colleges/registry.json existed, it may contain
   // fallback college IDs/secrets that will not match connectors/HSM.

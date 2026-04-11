@@ -13,7 +13,7 @@ const { getDb, run, queryOne, query } = require('./db/client.js');
 const { hashPassword, generateEd25519KeyPair, signEd25519, verifyEd25519, sha256, buildCanonicalJson, encryptCode } = require('./crypto/index.js');
 
 const { login, refreshAuth, logout, logSecurityEvent, verifyMfaLogin, enrollMfa, confirmMfaSetup, changePassword } = require('./routes/auth.js');
-const { listColleges, getCollege, createCollege } = require('./routes/colleges.js');
+const { listColleges, getCollege, createCollege, onboardCollege } = require('./routes/colleges.js');
 const { issueToken, revokeToken, getToken, listTokens } = require('./routes/tokens.js');
 const { decodeCode, liveVerify } = require('./routes/verify.js');
 const { getAuditLog, getStats, exportAuditLog } = require('./routes/audit.js');
@@ -21,7 +21,7 @@ const { getTokenDetails, correctToken } = require('./routes/tokens-extra.js');
 const { getDisclosurePolicy, saveDisclosurePolicy } = require('./routes/disclosure.js');
 const { getSecurityStats } = require('./routes/security.js');
 const { getConnectorConfig, saveConnectorConfig } = require('./routes/connector-config.js');
-const { connectorHealth, connectorVerify } = require('./routes/connector-proxy.js');
+const { connectorHealth, connectorVerify, rotateKey } = require('./routes/connector-proxy.js');
 const { sanitizeObject } = require('./middleware/validation.js');
 const { createRequestLogger, log, logStartup } = require('./middleware/logger.js');
 const metrics = require('./middleware/metrics.js');
@@ -157,10 +157,38 @@ async function router(req, res) {
     return res.end(JSON.stringify({ error: 'Too many requests from this IP, please try again later.' }));
   }
 
-  // Static: serve HTML frontend
+  // Static: serve HTML frontend (admin dashboard)
   if (path === '/' || path === '/app') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return res.end(HTML_APP);
+  }
+
+  // Static: serve the ui/ directory so browser and API share the same origin
+  // (avoids all CORS null-origin issues when opening HTML files from disk)
+  // Access the employer portal at: http://localhost:3000/ui/employer/index.html
+  if (path.startsWith('/ui/')) {
+    const _fs   = require('node:fs');
+    const _path = require('node:path');
+    // Resolve the file path relative to the project root (two levels up from authenx-node/src/)
+    const projectRoot = _path.resolve(__dirname, '../../');
+    const filePath    = _path.join(projectRoot, path);
+    // Security: block path traversal
+    const uiRoot   = _path.resolve(projectRoot, 'ui');
+    const resolved = _path.resolve(filePath);
+    if (!resolved.startsWith(uiRoot + _path.sep) && resolved !== uiRoot) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Forbidden' }));
+    }
+    if (!_fs.existsSync(resolved)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'File not found', path }));
+    }
+    const ext = _path.extname(resolved).toLowerCase();
+    const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
+                   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
+                   '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'text/plain' });
+    return res.end(_fs.readFileSync(resolved));
   }
 
   // Health check
@@ -190,6 +218,7 @@ async function router(req, res) {
   // College routes
   if (path === '/v1/colleges' && method === 'GET') return listColleges(req, res);
   if (path === '/v1/colleges' && method === 'POST') return createCollege(req, res, body);
+  if (path === '/v1/colleges/onboard' && method === 'POST') return onboardCollege(req, res, body);
   const collegeMatch = path.match(/^\/v1\/colleges\/([^/]+)$/);
   if (collegeMatch && method === 'GET') return getCollege(req, res, collegeMatch[1]);
 
@@ -226,6 +255,7 @@ async function router(req, res) {
   // Connector proxy (server-side HMAC)
   if (path === '/v1/connector/health' && method === 'GET') return connectorHealth(req, res);
   if (path === '/v1/connector/verify' && method === 'POST') return connectorVerify(req, res, body);
+  if (path === '/v1/connector/rotate-key' && method === 'POST') return rotateKey(req, res);
 
   // Security stats
   if (path === '/v1/security/stats' && method === 'GET') return getSecurityStats(req, res);
@@ -1178,6 +1208,16 @@ async function issueDemoRoute(req, res, body) {
     expires_at: null,
     checksum: sha256(`${token_id}:${college_id}:${student_ref_token}:${credential_type}`),
   });
+
+  // Persist the latest issued AuthenX code for this token.
+  run(
+    `INSERT INTO issued_authenx_codes (token_id, authenx_code, created_at, updated_at)
+     VALUES (?, ?, datetime('now'), datetime('now'))
+     ON CONFLICT(token_id) DO UPDATE SET
+       authenx_code = excluded.authenx_code,
+       updated_at = datetime('now')`,
+    [token_id, authenx_code]
+  );
 
   res.writeHead(201, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ message: 'Token issued', token_id, canonical_hash, authenx_code }));

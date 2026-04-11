@@ -255,7 +255,7 @@ function exportLog(format) {
 
   // Create a link with auth header isn't possible via <a> — download via fetch blob
   const token = Auth.getToken();
-  fetch(`http://localhost:3000${url}`, {
+  fetch(`${API_BASE.replace('/v1', '')}${url}`, {
     headers: { Authorization: `Bearer ${token}` }
   }).then(res => {
     if (!res.ok) throw new Error('Export failed');

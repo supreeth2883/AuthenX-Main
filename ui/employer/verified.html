@@ -59,6 +59,15 @@
     <div class="profile-grid" id="profile-grid"></div>
   </div>
 
+  <!-- Dataflow trace -->
+  <div class="card fade-in-delay-1" style="margin-bottom:20px">
+    <div style="font-size:14px;font-weight:600;color:var(--ax-gray-700);margin-bottom:12px;display:flex;align-items:center;gap:8px">
+      <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      Verification Dataflow
+    </div>
+    <div id="trace-list" style="display:grid;gap:8px"></div>
+  </div>
+
   <!-- Cryptographic verification checks -->
   <div class="card fade-in-delay-2" style="margin-bottom:20px">
     <div style="font-size:14px;font-weight:600;color:var(--ax-gray-700);margin-bottom:16px;display:flex;align-items:center;gap:8px">
@@ -119,6 +128,7 @@ const decodeRaw = sessionStorage.getItem('verify_decode');
 
 if (!liveRaw || !decodeRaw) {
   window.location.href = 'verify.html';
+  throw new Error('Missing verification session state');
 }
 
 const liveData = JSON.parse(liveRaw);
@@ -127,6 +137,7 @@ const decodeData = JSON.parse(decodeRaw);
 // If not actually verified, redirect to revoked
 if (liveData.result !== 'verified' && liveData.result !== 'fallback_verified') {
   window.location.href = 'revoked.html';
+  throw new Error('Verification result is not verified');
 }
 
 // Fallback Mode Setup
@@ -156,6 +167,8 @@ const checks = {
   live_sig:      liveData.live_sig,
   not_revoked:   liveData.not_revoked,
 };
+const dataSource = liveData.data_source || (isFallback ? 'registry_cache' : 'connector_live');
+const lookupPath = liveData.lookup_path || 'AuthenXCode -> verification_tokens.id -> student_ref_token -> connector /verify';
 
 // Verified time
 document.getElementById('verified-time').textContent =
@@ -170,6 +183,14 @@ document.getElementById('profile-name').textContent = name;
 const collegeName = liveData.college || (decodeData.college?.name) || (typeof decodeData.college === 'string' ? decodeData.college : '—');
 document.getElementById('profile-college').textContent =
   collegeName + ' · ' + (student.credential_type || decodeData.credential_type || '—').replace(/_/g, ' ');
+
+if (!isFallback && dataSource === 'mock_erp_postgres') {
+  const badge = document.querySelector('.live-badge');
+  badge.innerHTML = '<span class="pulse-dot" style="background:#2563EB"></span> DB LOOKUP';
+  badge.style.color = '#1D4ED8';
+  badge.style.borderColor = '#BFDBFE';
+  badge.style.background = '#EFF6FF';
+}
 
 // Profile grid fields
 const fbVal = isFallback ? '<span style="color:var(--ax-gray-400)">ERP Offline</span>' : '—';
@@ -186,6 +207,22 @@ document.getElementById('profile-grid').innerHTML = profileFields.map(f => `
     <div class="field-label">${f.label}</div>
     <div class="field-value">${f.value}</div>
   </div>`).join('');
+
+const traceSteps = [
+  { title: 'AuthenX Code decoded', detail: `token_id = ${decodeData.token_id || '—'}` },
+  { title: 'Registry lookup completed', detail: `verification_tokens.id -> student_ref_token (${decodeData.student_ref_token || '—'})` },
+  { title: 'Student details source', detail: dataSource === 'mock_erp_postgres' ? 'PostgreSQL mock ERP table: cvr_mock_erp_students' : dataSource },
+  { title: 'Lookup path used', detail: lookupPath },
+];
+document.getElementById('trace-list').innerHTML = traceSteps.map((s, idx) => `
+  <div style="display:flex;gap:10px;align-items:flex-start;padding:10px;border:1px solid var(--ax-gray-200);border-radius:8px;background:var(--ax-gray-50)">
+    <div style="width:20px;height:20px;border-radius:50%;background:var(--ax-blue);color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">${idx + 1}</div>
+    <div>
+      <div style="font-size:12px;font-weight:600;color:var(--ax-gray-800)">${s.title}</div>
+      <div style="font-size:11px;color:var(--ax-gray-500);margin-top:2px;word-break:break-word">${s.detail}</div>
+    </div>
+  </div>
+`).join('');
 
 // Crypto checks
 const cryptoCheckDefs = [
@@ -225,6 +262,8 @@ const techItems = [
   { label: 'Canonical Hash',       value: decodeData.canonical_hash || '—' },
   { label: 'Schema Version',       value: decodeData.schema_version || '1.0' },
   { label: 'Student Ref',          value: decodeData.student_ref_token || '—' },
+  { label: 'Data Source',          value: dataSource },
+  { label: 'Lookup Path',          value: lookupPath },
   { label: 'Latency',              value: liveData.latency_ms != null ? liveData.latency_ms + ' ms' : '—' },
 ];
 document.getElementById('tech-content').innerHTML = techItems.map(t => `
@@ -274,6 +313,8 @@ function buildReportText() {
     'Token ID:      ' + (decodeData.token_id || '—'),
     'Schema:        ' + (decodeData.schema_version || '1.0'),
     'Student Ref:   ' + (decodeData.student_ref_token || '—'),
+    'Data Source:   ' + dataSource,
+    'Lookup Path:   ' + lookupPath,
     '',
     'Verified by AuthenX — authenx.in',
     '========================================',

@@ -110,6 +110,16 @@ function issueToken(req, res, body) {
   };
   const authenx_code = encryptCode(codePayload);
 
+  // Persist the latest issued AuthenX code for this token.
+  run(
+    `INSERT INTO issued_authenx_codes (token_id, authenx_code, created_at, updated_at)
+     VALUES (?, ?, datetime('now'), datetime('now'))
+     ON CONFLICT(token_id) DO UPDATE SET
+       authenx_code = excluded.authenx_code,
+       updated_at = datetime('now')`,
+    [token_id, authenx_code]
+  );
+
   res.writeHead(201, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
     message: 'Token issued successfully',

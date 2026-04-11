@@ -6,14 +6,35 @@
 
 const SQL_SCHEMA = `
   CREATE TABLE IF NOT EXISTS colleges (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    short_code  TEXT NOT NULL UNIQUE,
-    public_key_hex TEXT NOT NULL,
+    id             TEXT PRIMARY KEY,
+    name           TEXT NOT NULL,
+    short_code     TEXT NOT NULL UNIQUE,
+    admin_email    TEXT,
+    public_key_hex TEXT NOT NULL DEFAULT '',
     connector_url  TEXT NOT NULL,
+    connector_port INTEGER NOT NULL DEFAULT 9000,
     shared_secret  TEXT NOT NULL,
-    active      INTEGER NOT NULL DEFAULT 1,
-    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+    active         INTEGER NOT NULL DEFAULT 1,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Ed25519 keypair per college (private key stored AES-256-GCM encrypted)
+  CREATE TABLE IF NOT EXISTS college_keys (
+    college_id      TEXT PRIMARY KEY REFERENCES colleges(id),
+    public_key_hex  TEXT NOT NULL,
+    private_key_enc TEXT NOT NULL,
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- PostgreSQL provisioning metadata per college
+  CREATE TABLE IF NOT EXISTS college_postgres_provisioning (
+    college_id       TEXT PRIMARY KEY REFERENCES colleges(id),
+    db_name          TEXT NOT NULL,
+    db_user          TEXT NOT NULL,
+    db_password_enc  TEXT NOT NULL,
+    provisioned      INTEGER NOT NULL DEFAULT 0,
+    provisioned_at   TEXT,
+    created_at       TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS users (
@@ -44,6 +65,14 @@ const SQL_SCHEMA = `
     verification_count  INTEGER NOT NULL DEFAULT 0,
     last_verified_at    TEXT,
     last_result         TEXT
+  );
+
+  -- Persist generated AuthenX codes so colleges can re-fetch issued codes later.
+  CREATE TABLE IF NOT EXISTS issued_authenx_codes (
+    token_id       TEXT PRIMARY KEY REFERENCES verification_tokens(id) ON DELETE CASCADE,
+    authenx_code   TEXT NOT NULL,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
   CREATE TABLE IF NOT EXISTS disclosure_policies (
@@ -156,6 +185,7 @@ const SQL_SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_tokens_college   ON verification_tokens(college_id);
   CREATE INDEX IF NOT EXISTS idx_tokens_student   ON verification_tokens(student_ref_token);
   CREATE INDEX IF NOT EXISTS idx_tokens_status    ON verification_tokens(status);
+  CREATE INDEX IF NOT EXISTS idx_issued_codes_updated ON issued_authenx_codes(updated_at);
   CREATE INDEX IF NOT EXISTS idx_disclosure_college ON disclosure_policies(college_id);
   CREATE INDEX IF NOT EXISTS idx_connectorcfg_updated ON college_connector_configs(updated_at);
   CREATE INDEX IF NOT EXISTS idx_requests_token   ON verification_requests(token_id);

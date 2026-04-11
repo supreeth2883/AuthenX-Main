@@ -3,7 +3,7 @@
  * API calls, auth, navigation, and utilities
  */
 
-const API_BASE = 'http://localhost:3000/v1';
+const API_BASE = (localStorage.getItem('authenx_api_base') || 'http://localhost:3000') + '/v1';
 
 // ─── HTML escape helper (prevents XSS when inserting into innerHTML) ──────────
 function esc(str) {

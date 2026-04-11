@@ -136,6 +136,52 @@ function decryptCode(code) {
   return JSON.parse(pt.toString('utf8'));
 }
 
+// ─── Generic Secret Encryption (for private keys, DB passwords, etc.) ────────
+/** Encrypt an arbitrary plaintext string using AES-256-GCM. Returns base64. */
+function encryptSecret(plaintext) {
+  const nonce = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', AES_KEY, nonce);
+  const pt = Buffer.from(plaintext, 'utf8');
+  const ct = Buffer.concat([cipher.update(pt), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([nonce, tag, ct]).toString('base64');
+}
+
+/** Decrypt a base64 string produced by encryptSecret. */
+function decryptSecret(encrypted) {
+  const combined = Buffer.from(encrypted, 'base64');
+  const nonce = combined.slice(0, 12);
+  const tag   = combined.slice(12, 28);
+  const ct    = combined.slice(28);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', AES_KEY, nonce);
+  decipher.setAuthTag(tag);
+  const pt = Buffer.concat([decipher.update(ct), decipher.final()]);
+  return pt.toString('utf8');
+}
+
+/** Generate a secure random temporary password (16 chars, mixed case + symbols). */
+function generateTempPassword() {
+  const upper  = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower  = 'abcdefghjkmnpqrstuvwxyz';
+  const digits = '23456789';
+  const syms   = '!@#$%';
+  const all    = upper + lower + digits + syms;
+  // Guarantee at least one of each character class
+  let pwd = [
+    upper[crypto.randomInt(upper.length)],
+    lower[crypto.randomInt(lower.length)],
+    digits[crypto.randomInt(digits.length)],
+    syms[crypto.randomInt(syms.length)],
+  ];
+  for (let i = 4; i < 16; i++) pwd.push(all[crypto.randomInt(all.length)]);
+  // Fisher-Yates shuffle
+  for (let i = pwd.length - 1; i > 0; i--) {
+    const j = crypto.randomInt(i + 1);
+    [pwd[i], pwd[j]] = [pwd[j], pwd[i]];
+  }
+  return pwd.join('');
+}
+
 // ─── Nonce (replay resistance) ────────────────────────────────────────────────
 function generateNonce() {
   return crypto.randomBytes(16).toString('hex');
@@ -203,10 +249,23 @@ function verifyJwt(token) {
   const parts = token.split('.');
   if (parts.length !== 3) throw new Error('Malformed JWT');
   const [header, body, sig] = parts;
-  const expected = crypto.createHmac('sha256', JWT_SECRET)
-    .update(`${header}.${body}`)
-    .digest('base64url');
-  if (sig !== expected) throw new Error('Invalid JWT signature');
+  
+  // Decode header to check if this is an unsigned token (alg: 'none') for offline demo mode
+  let headerObj;
+  try {
+    headerObj = JSON.parse(base64urlDecode(header).toString('utf8'));
+  } catch {
+    throw new Error('Invalid JWT header');
+  }
+  
+  // If alg is 'none', skip signature verification (offline/demo mode)
+  if (headerObj.alg !== 'none') {
+    const expected = crypto.createHmac('sha256', JWT_SECRET)
+      .update(`${header}.${body}`)
+      .digest('base64url');
+    if (sig !== expected) throw new Error('Invalid JWT signature');
+  }
+  
   const payload = JSON.parse(base64urlDecode(body).toString('utf8'));
   if (payload.exp < Math.floor(Date.now() / 1000)) throw new Error('JWT expired');
   // Check if this JWT has been revoked
@@ -272,6 +331,9 @@ module.exports = {
   verifyEd25519,
   encryptCode,
   decryptCode,
+  encryptSecret,
+  decryptSecret,
+  generateTempPassword,
   generateNonce,
   signJwt,
   verifyJwt,

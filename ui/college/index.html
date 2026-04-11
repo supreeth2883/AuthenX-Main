@@ -177,6 +177,49 @@ input::placeholder { color: var(--ax-subtle); }
 
 <script src="../shared/offline-auth.js"></script>
 <script>
+const API_CANDIDATES = [
+  localStorage.getItem('authenx_api_base'),
+  'http://127.0.0.1:3001',
+  'http://localhost:3001',
+  'http://127.0.0.1:3002',
+  'http://localhost:3002',
+  'http://127.0.0.1:3100',
+  'http://localhost:3100',
+  'http://127.0.0.1:3200',
+  'http://localhost:3200',
+  'http://127.0.0.1:3300',
+  'http://localhost:3300',
+  'http://127.0.0.1:3000',
+  'http://localhost:3000',
+].filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+let API = API_CANDIDATES[0] || 'http://127.0.0.1:3001';
+let apiBasePromise = null;
+
+async function getApiBase() {
+  if (apiBasePromise) return apiBasePromise;
+
+  apiBasePromise = (async () => {
+    for (const base of API_CANDIDATES) {
+      try {
+        const r = await fetch(`${base}/health`);
+        const text = await r.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch {}
+
+        if (r.ok && data && data.status === 'ok') {
+          API = base;
+          localStorage.setItem('authenx_api_base', API);
+          return API;
+        }
+      } catch {}
+    }
+    return API;
+  })();
+
+  return apiBasePromise;
+}
+
 function fillCred(email, pass) {
   document.getElementById('email').value = email;
   document.getElementById('password').value = pass;
@@ -186,19 +229,8 @@ document.getElementById('password').addEventListener('keydown', e => {
   if (e.key === 'Enter') doLogin();
 });
 
-// Auto-redirect if already logged in
-(function() {
-  const t = localStorage.getItem('ax_token');
-  if (t) {
-    try {
-      const c = JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
-      if (c.exp > Date.now()/1000) {
-        const onboarded = localStorage.getItem('ax_onboarded') === '1';
-        window.location.href = onboarded ? 'dashboard.html' : 'onboarding.html';
-      }
-    } catch {}
-  }
-})();
+// Keep login page visible when opened directly (e.g., Live Preview).
+// Previous behavior auto-redirected immediately if a token existed in localStorage.
 
 async function doLogin() {
   const email    = document.getElementById('email').value.trim();
@@ -229,7 +261,8 @@ async function doLogin() {
   }
 
   try {
-    const res = await fetch('http://localhost:3000/v1/auth/login', {
+    const apiBase = await getApiBase();
+    const res = await fetch(`${apiBase}/v1/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
@@ -244,7 +277,7 @@ async function doLogin() {
 
     // Check backend: if onboarding is already complete, go straight to dashboard.
     try {
-      const cfgRes = await fetch('http://localhost:3000/v1/connector-config', {
+      const cfgRes = await fetch(`${apiBase}/v1/connector-config`, {
         headers: { 'Authorization': `Bearer ${data.token}`, 'Content-Type': 'application/json' }
       });
       if (cfgRes.ok) {

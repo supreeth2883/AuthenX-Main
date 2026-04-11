@@ -293,7 +293,7 @@ async function runDiagnostics() {
 
   // Check main server HSM connectivity indirectly via health
   try {
-    const res = await fetch('http://localhost:3000/health');
+    const res = await fetch(`${API_BASE.replace('/v1', '')}/health`);
     set('diag-hsm', res.ok ? '✓ Server healthy' : '✕ Server error', res.ok ? 'diag-ok' : 'diag-fail');
   } catch {
     set('diag-hsm', '✕ Server unreachable', 'diag-fail');
@@ -324,7 +324,14 @@ function rotateKey() {
       </div>`,
     confirmText: 'Rotate Key',
     confirmClass: 'btn-danger',
-    onConfirm: () => toast('Key rotation scheduled. Contact your IT team to complete the process.', 'info')
+    onConfirm: async () => {
+      try {
+        const result = await API.post('/connector/rotate-key', {});
+        toast(`Key rotated successfully. New public key: ${result.public_key_hex.slice(0, 16)}…`, 'success', 6000);
+      } catch (err) {
+        toast('Key rotation failed: ' + err.message, 'error', 6000);
+      }
+    }
   });
 }
 

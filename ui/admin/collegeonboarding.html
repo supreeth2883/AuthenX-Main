@@ -124,8 +124,10 @@
 
 <div class="container">
   <div class="card" style="padding:14px 18px;margin-bottom:18px;background:#eef1ff;border-color:#d9dfff;">
-    <div style="font-size:12px;font-weight:700;color:#4458c0;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px;">Frontend-only super credential</div>
-    <div style="font-size:13px;color:#1a1f36;">Email: <b>superadmin@authenx.in</b> | Password: <b>1234</b></div>
+    <div style="font-size:12px;font-weight:700;color:#4458c0;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px;">Super Admin credential (backend)</div>
+    <div style="font-size:13px;color:#1a1f36;">Email: <b>admin@authenx.in</b> | Password: <b>Admin@123</b>
+      <span style="margin-left:12px;color:#697386;font-size:12px;">— make sure backend stack is running (API auto-detected)</span>
+    </div>
   </div>
 
   <!-- Stepper -->
@@ -441,14 +443,126 @@
 
 <script src="../shared/offline-auth.js"></script>
 <script>
-const API = 'http://localhost:3000';
+const API_CANDIDATES = [
+  localStorage.getItem('authenx_api_base'),
+  'http://127.0.0.1:3001',
+  'http://localhost:3001',
+  'http://127.0.0.1:3002',
+  'http://localhost:3002',
+  'http://127.0.0.1:3100',
+  'http://localhost:3100',
+  'http://127.0.0.1:3200',
+  'http://localhost:3200',
+  'http://127.0.0.1:3300',
+  'http://localhost:3300',
+  'http://127.0.0.1:3000',
+  'http://localhost:3000',
+].filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+let API = API_CANDIDATES[0] || 'http://127.0.0.1:3001';
+let apiResolved = false;
 let selectedDb = 'sqlite';
 let onboardedCollege = null;
 let jwt = localStorage.getItem('authenx_token');
 
-if (!jwt && window.AuthenXOfflineAuth) {
-  jwt = window.AuthenXOfflineAuth.seedAdminSession().token;
+function clearAuthSession() {
+  jwt = null;
+  localStorage.removeItem('authenx_token');
+  localStorage.removeItem('authenx_user');
 }
+
+async function detectApiBase() {
+  if (apiResolved) return API;
+
+  for (const base of API_CANDIDATES) {
+    try {
+      const r = await fetch(`${base}/health`);
+      const text = await r.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch {}
+
+      if (r.ok && data && data.status === 'ok') {
+        API = base;
+        localStorage.setItem('authenx_api_base', API);
+        apiResolved = true;
+        return API;
+      }
+    } catch {}
+  }
+
+  apiResolved = true;
+  return API;
+}
+
+async function loginAcrossCandidates(email, password) {
+  const candidates = [API, ...API_CANDIDATES.filter(base => base !== API)];
+  let lastError = 'Invalid credentials';
+
+  for (const base of candidates) {
+    try {
+      const r = await fetch(`${base}/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      let data = {};
+      try { data = await r.json(); } catch {}
+
+      if (r.ok && data.token) {
+        API = base;
+        localStorage.setItem('authenx_api_base', API);
+        return { ok: true, token: data.token };
+      }
+
+      if (data && data.error) lastError = data.error;
+    } catch {
+      // Ignore unreachable candidates and continue probing.
+    }
+  }
+
+  return { ok: false, error: lastError };
+}
+
+// If no valid token exists, prompt for login and obtain a real JWT from the backend.
+// Falls back to offline token only if the backend is unreachable (for local UI preview).
+async function ensureAuth() {
+  await detectApiBase();
+
+  // If a token exists, validate it against backend first.
+  if (jwt) {
+    try {
+      const r = await fetch(`${API}/v1/colleges`, {
+        headers: { 'Authorization': `Bearer ${jwt}` },
+      });
+      if (r.ok) return;
+      clearAuthSession();
+    } catch {
+      clearAuthSession();
+    }
+  }
+
+  // Try to fetch credentials from the user
+  const email    = prompt('AuthenX Admin Login\n\nEmail:', 'admin@authenx.in');
+  if (!email) return;
+  const password = prompt('Password:', '');
+  if (!password) return;
+
+  try {
+    const result = await loginAcrossCandidates(email, password);
+    if (!result.ok) {
+      alert('Login failed: ' + (result.error || 'Invalid credentials'));
+      return;
+    }
+    jwt = result.token;
+    localStorage.setItem('authenx_token', jwt);
+  } catch {
+    alert(`Unable to reach AuthenX backend at ${API}. Please start backend stack and reload.`);
+  }
+}
+
+// Trigger auth check on page load (non-blocking)
+ensureAuth();
 
 // ─── Step navigation ──────────────────────────────────────────────────────────
 function goToStep(n) {
@@ -621,8 +735,25 @@ function buildConfigPreview() {
   document.getElementById('config-preview').textContent = JSON.stringify(cfg, null, 2);
 }
 
+// ─── Error banner ──────────────────────────────────────────────────────────────
+function showError(msg) {
+  let banner = document.getElementById('error-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'error-banner';
+    banner.style.cssText = 'background:#ffe0e6;border:1px solid #f5a9b8;color:#c0132e;padding:14px 18px;' +
+      'border-radius:8px;font-size:14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;';
+    document.querySelector('.container').prepend(banner);
+  }
+  banner.innerHTML = `<span>⚠ ${msg}</span><button onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;font-size:18px;color:#c0132e;">×</button>`;
+  banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 // ─── Save college ──────────────────────────────────────────────────────────────
 async function saveCollege() {
+  await detectApiBase();
+  if (!jwt) await ensureAuth();
+
   const btn  = document.getElementById('save-btn');
   const txt  = document.getElementById('save-btn-text');
   const spin = document.getElementById('save-btn-spinner');
@@ -643,22 +774,16 @@ async function saveCollege() {
       body: JSON.stringify(payload),
     });
     const data = await r.json();
-    if (!r.ok) throw new Error(data.error || 'Failed to register college');
+    if (r.status === 401 && /JWT|Authorization|signature|expired/i.test(data.error || '')) {
+      clearAuthSession();
+      await ensureAuth();
+      throw new Error('Session expired/invalid. Please click Register College again.');
+    }
+    if (!r.ok) throw new Error(data.error || `Server error (${r.status})`);
     onboardedCollege = data;
     showSuccess(data);
   } catch (e) {
-    // Demo fallback — show mock success
-    const mockData = {
-      college_id:   'clg_' + Math.random().toString(36).slice(2, 10),
-      college_name: val('college_name'),
-      short_code:   val('college_code').toUpperCase(),
-      admin_email:  val('admin_email'),
-      connector_url: val('connector_url'),
-      public_key_hex: 'd2d99e7bc2a2212cf0cf5f1bdd0f2be7072623c8d09c036a09baf77c966e6a73',
-      admin_temp_password: 'College@' + Math.floor(1000 + Math.random() * 9000),
-    };
-    onboardedCollege = mockData;
-    showSuccess(mockData);
+    showError(e.message || 'Failed to reach the AuthenX server. Make sure it is running on port 3000.');
   } finally {
     btn.disabled = false; txt.textContent = '✓ Register College'; spin.classList.add('hidden');
   }
