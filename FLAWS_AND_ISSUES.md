@@ -30,40 +30,11 @@ git commit -m "Restore deleted connector service"
 
 ---
 
-### 🔴 CRITICAL: NPM Dependency Breaks "Zero Dependencies" Principle
-**File(s):** `authenx-node/package.json`, `authenx-node/node_modules/pg/`
-**Severity:** Architecture violation
-**Issue:**
-```json
-{
-  "dependencies": {
-    "pg": "^8.13.3"  ← PostgreSQL client (20MB, 200+ submodules)
-  }
-}
-```
+### ✅ RESOLVED: NPM Dependency `pg` — Decision Made
+**File(s):** `authenx-node/package.json`
+**Status:** Resolved — `pg` is the only npm dependency and it is required.
 
-**Impact:**
-- CLAUDE.md claims "**zero npm dependencies**" — this is false
-- HSM and server both use Node built-ins for crypto; no need for `pg` yet
-- Build size increased by 20MB+
-- Requires npm toolchain (should only need Node)
-
-**Cause:** Likely added for future PostgreSQL migrations but never used.
-
-**Evidence:** No `require('pg')` imports found in codebase beyond node_modules.
-
-**To Fix:**
-```bash
-cd authenx-node
-npm uninstall pg
-rm -rf node_modules package-lock.json
-# Verify: server.js should still start without errors
-node src/server.js
-```
-
-Then update CLAUDE.md to either:
-a) Remove claim of "zero deps" if PostgreSQL will be added, OR
-b) Remove `pg` and implement PostgreSQL via raw socket connections if needed
+`pg` is now used as the main AuthenX database driver (`db/client.js`), mock ERP, and college DB provisioning. The "zero npm dependencies" original design goal is superseded by the PostgreSQL migration.
 
 ---
 
@@ -173,39 +144,12 @@ node seed.js  // Generate test data once
 
 ---
 
-### 🟠 HIGH: `pg` Added But Not Used — Silent Configuration Bug
+### ✅ RESOLVED: Main DB Migrated to PostgreSQL
 **File(s):** `authenx-node/src/db/client.js`, `authenx-node/src/db/schema.js`
-**Severity:** Database inconsistency risk
-**Issue:**
-```javascript
-// client.js uses only SQLite
-const { DatabaseSync } = require('node:sqlite');
-const db = new DatabaseSync('./authenx.db');
+**Status:** Fixed — entire main AuthenX database migrated from `node:sqlite` to `pg` Pool.
 
-// But package.json has pg dependency — someone might add:
-const { Pool } = require('pg');  // ... which is never called
-```
-
-**Impact:**
-- Future developer might assume PostgreSQL is being used
-- Schema migrations might be applied to wrong database
-- Mixed SQL dialect issues if someone switches without testing
-- Unused dependency in production
-
-**To Fix:**
-1. Remove `pg` from package.json (see 🔴 CRITICAL issue)
-2. Add config toggle for database selection (if PostgreSQL support is planned):
-```javascript
-const DB_TYPE = process.env.DB_TYPE || 'sqlite'; // or 'postgres'
-
-if (DB_TYPE === 'sqlite') {
-  const { DatabaseSync } = require('node:sqlite');
-  module.exports = { ... sqlite funcs ... };
-} else if (DB_TYPE === 'postgres') {
-  const { Pool } = require('pg');
-  module.exports = { ... postgres funcs ... };
-}
-```
+`db/client.js` now uses a `pg.Pool` with `AUTHENX_PG_*` environment variables.
+All 18 tables use PostgreSQL DDL. All routes and middleware use async `run`/`query`/`queryOne`.
 
 ---
 
@@ -431,32 +375,15 @@ const hsmCircuitBreaker = new CircuitBreaker({
 
 ---
 
-### 🟡 MEDIUM: Discord Between CLAUDE.md and Reality
-**File(s):** `CLAUDE.md` vs actual codebase
-**Severity:** Misleading documentation
-**Issues:**
-1. CLAUDE.md claims "**zero npm dependencies**" — but `pg` is installed
-2. CLAUDE.md says Dockerfiles exist — they're deleted
-3. CLAUDE.md lists `authenx-connector/connector.js` as active — it's deleted
-4. CLAUDE.md says "`colleges/` directory" exists — it's deleted
-
-**Impact:**
-- New developers follow incorrect setup instructions
-- Tasks assigned based on false assumptions
-- Time wasted on non-existent components
-
-**To Fix:** Update CLAUDE.md (top section):
-```markdown
-## Current State (Branch: backend-change)
-
-⚠️ **This branch is UNDER RESTRUCTURING**:
-- ❌ `authenx-connector/` deleted (being refactored)
-- ❌ `docker-compose.yml` deleted (will be restored)
-- ⚠️ `pg` dependency added (may be temporary)
-
-DO NOT use this branch for production or reference implementations.
-Use `main` branch for stable setup.
-```
+### ✅ RESOLVED: Discord Between CLAUDE.md and Reality
+**File(s):** `CLAUDE.md`, `CONTEXT.md`, `README.md`
+**Resolution:** All docs updated (2026-04-11) to reflect:
+- `pg` IS used (mock ERP + PG provisioning) — "zero npm deps" claim removed
+- Docker files deleted — noted in branch warning
+- `authenx-connector/` deleted — noted as critical gap
+- Table count corrected to 18 (added `issued_authenx_codes`)
+- Route count corrected to ~45 (was incorrectly listed as 75+)
+- Rate limiter numbers corrected
 
 ---
 
@@ -801,25 +728,24 @@ app.get('/metrics/prometheus', (req, res) => {
 
 | Issue Level | Count | Examples |
 |------------|-------|----------|
-| 🔴 CRITICAL | 3 | Connector deleted, pg dependency, missing Docker |
-| 🟠 HIGH | 5 | Connector proxy bugs, ERP mock issues, HMAC not documented, no HSM circuit breaker, rate limit missing |
-| 🟡 MEDIUM | 7 | Field order validation, onboarding validation, CLAUDE.md discord, env var validation, migrations, URL handling, metrics format |
+| 🔴 CRITICAL | 2 | Connector deleted, missing Docker orchestration |
+| 🟠 HIGH | 5 | Connector proxy bugs, ERP mock issues, HMAC not documented, no HSM circuit breaker, pg breaks zero-deps principle |
+| 🟡 MEDIUM | 7 | Field order validation, onboarding validation, env var validation, migrations, metrics format, rate limit per-college, nonce reuse |
 | 🟢 LOW | 4 | Sensitive info leaks, ERP health, timestamp inconsistency, persistent sessions |
 
 ---
 
 ## 9. Immediate Action Items (Priority Order)
 
-1. **Restore `authenx-connector/` directory** — blocks all verification
-2. **Remove `pg` dependency** — violates architecture principle
-3. **Restore Docker files** — enables full-stack testing
-4. **Add connector health check** — catch config errors early
-5. **Implement HMAC documentation** — enables connector integration
-6. **Fix canonical JSON validation** — prevents hash mismatches
-7. **Add environment variable validation** — catch config errors on startup
-8. **Implement retry logic** — improve reliability
+1. **Restore `authenx-connector/` directory** — blocks all verification for real colleges
+2. **Restore Docker files** — enables full-stack testing
+3. **Add connector health check at onboarding** — catch bad connector configs early
+4. **Implement HMAC documentation** — enables connector integration
+5. **Fix canonical JSON validation** — prevents hash mismatches
+6. **Add environment variable validation on startup** — catch config errors early
+7. **Implement retry logic for connector calls** — improve reliability
+8. ~~**Decide on `pg` dependency**~~ — resolved: main DB migrated to PostgreSQL
 9. **Add test suite** — prevent regressions
-10. **Update CLAUDE.md** — correct misleading claims
 
 ---
 

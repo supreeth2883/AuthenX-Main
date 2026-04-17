@@ -11,10 +11,10 @@ const { signRequest } = require('../middleware/hmac-auth.js');
 const cvrErp = require('../mock-erp/cvr-erp.js');
 const { CVR_SHORT_CODE } = cvrErp;
 
-function getCollegeConnector(claims) {
+async function getCollegeConnector(claims) {
   if (!claims?.college_id) return null;
   return queryOne(
-    'SELECT id, name, short_code, connector_url, shared_secret FROM colleges WHERE id = ? AND active = 1',
+    'SELECT id, name, short_code, connector_url, shared_secret FROM colleges WHERE id = $1 AND active = 1',
     [claims.college_id]
   );
 }
@@ -62,7 +62,7 @@ async function connectorHealth(req, res) {
   const claims = requireAuth(req, res);
   if (!claims) return;
 
-  const college = getCollegeConnector(claims);
+  const college = await getCollegeConnector(claims);
   if (!college) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'No college in session' }));
@@ -99,14 +99,12 @@ async function connectorHealth(req, res) {
  * POST /v1/connector/verify
  * Body: { student_ref_token, nonce }
  * Server-side proxy to connector /verify with HMAC headers.
- * Falls back to the PostgreSQL mock ERP for CVR when the external connector
- * is absent (mock mode) or unreachable (network error).
  */
 async function connectorVerify(req, res, body) {
   const claims = requireAuth(req, res);
   if (!claims) return;
 
-  const college = getCollegeConnector(claims);
+  const college = await getCollegeConnector(claims);
   if (!college) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'No college in session' }));
@@ -122,7 +120,6 @@ async function connectorVerify(req, res, body) {
   const isMockMode = !connectorUrl || connectorUrl === 'mock' || connectorUrl.startsWith('internal://');
 
   // ── Mock ERP path (no external connector configured) ─────────────────────
-  // Only CVR has a local PostgreSQL mock dataset; other colleges get a clear 503.
   if (isMockMode) {
     if (college.short_code === CVR_SHORT_CODE) {
       return serveMockErp(res, college, student_ref_token);
@@ -160,7 +157,6 @@ async function connectorVerify(req, res, body) {
     }));
   } catch (err) {
     console.warn(`[connector-proxy] ${college.id} connector unreachable (${err.message})`);
-    // Fall back to PostgreSQL mock ERP for CVR only.
     if (college.short_code === CVR_SHORT_CODE) {
       return serveMockErp(res, college, student_ref_token);
     }
@@ -171,9 +167,6 @@ async function connectorVerify(req, res, body) {
 
 /**
  * Serve student data from the CVR PostgreSQL mock ERP.
- * Returns fields compatible with the issue page:
- *   student_ref_token, name, degree, branch, credential_type,
- *   cgpa, graduation_year, issue_date, status, source.
  */
 async function serveMockErp(res, college, student_ref_token) {
   try {
@@ -196,15 +189,12 @@ async function serveMockErp(res, college, student_ref_token) {
 /**
  * POST /v1/connector/rotate-key
  * Rotate the college's Ed25519 signing key pair in the HSM.
- * Updates both `colleges.public_key_hex` and `college_keys.public_key_hex`
- * so new credentials are signed with the fresh key.
- * Existing verified tokens remain verifiable (HSM keeps historical keys).
  */
 async function rotateKey(req, res) {
   const claims = requireAuth(req, res);
   if (!claims) return;
 
-  const college = getCollegeConnector(claims);
+  const college = await getCollegeConnector(claims);
   if (!college) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'No college in session' }));
@@ -238,13 +228,13 @@ async function rotateKey(req, res) {
   const { public_key_hex, version } = hsmResult.json;
 
   // Persist new public key in both tables
-  run('UPDATE colleges SET public_key_hex = ? WHERE id = ?', [public_key_hex, college.id]);
-  run('UPDATE college_keys SET public_key_hex = ? WHERE college_id = ?', [public_key_hex, college.id]);
+  await run('UPDATE colleges SET public_key_hex = $1 WHERE id = $2', [public_key_hex, college.id]);
+  await run('UPDATE college_keys SET public_key_hex = $1 WHERE college_id = $2', [public_key_hex, college.id]);
 
   // Immutable audit trail
-  run(
+  await run(
     `INSERT INTO security_events (id, event_type, actor_id, actor_email, target_id, ip_address, details)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [
       crypto.randomUUID(),
       'key_rotated',

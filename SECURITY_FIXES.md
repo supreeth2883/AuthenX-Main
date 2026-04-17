@@ -178,12 +178,11 @@ Structured JSON logs with `X-Request-ID` correlation header on every response. I
 ---
 
 ### 13. Rate Limiting
-**File:** `authenx-node/src/middleware/rate-limiter.js`
+**File:** `authenx-node/src/middleware/rate-limiter.js`, `authenx-node/src/server.js`
 
-Sliding window rate limiter:
-- Verification endpoint: 30 req/min per IP
-- Issue endpoint: 20 req/min per IP
-- Global: 50 req/min per IP (inline in server.js)
+Two-layer sliding window rate limiter:
+- `rate-limiter.js`: verify 30 req/min per employer user (JWT user ID), issue 20 req/min per college admin, global 200 req/min per IP
+- `server.js` (inline): additional 50 req/min per IP hard cap before routes are evaluated
 
 ---
 
@@ -266,8 +265,13 @@ AES_KEY_HEX=<64-char hex>         # AES key for AuthenX Codes (auto-generated if
 CORS_ALLOWED_ORIGINS=https://app.authenx.in,https://authenx.in
 PORT=3000
 HSM_PORT=9099
-DB_PATH=/data/authenx.db
 LOG_LEVEL=info
+
+# Main AuthenX database (PostgreSQL):
+AUTHENX_PG_HOST=postgres.internal
+AUTHENX_PG_PORT=5432
+AUTHENX_PG_USER=authenx
+AUTHENX_PG_DATABASE=authenx
 
 # PostgreSQL college provisioning (optional feature):
 PG_PROVISION_HOST=postgres.internal
@@ -298,7 +302,7 @@ PG_PROVISION_PASSWORD=<password>
 - [ ] Force password change for all default accounts on first login
 - [ ] Enable HTTPS via reverse proxy (nginx/Caddy)
 - [ ] Configure firewall: HSM port 9099 localhost-only; connectors accessible only from AuthenX IPs
-- [ ] Configure DB backups (`authenx.db`)
+- [ ] Configure PostgreSQL backups (pg_dump / WAL archiving for authenx database)
 - [ ] Set up log monitoring with correlation ID indexing
 - [ ] Review and tune rate limiting thresholds
 - [ ] Enable MFA for all admin accounts (`POST /v1/auth/mfa/enroll`)

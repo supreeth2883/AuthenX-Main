@@ -182,20 +182,10 @@
       <div class="card-title">Select Database Type</div>
       <div class="card-sub">Choose the type of database or system the college ERP uses. AuthenX connector adapts to each type automatically — no code changes needed.</div>
       <div class="db-grid">
-        <div class="db-card" onclick="selectDb('sqlite')" id="db-sqlite">
-          <div class="db-icon">📁</div>
-          <div class="db-label">SQLite</div>
-          <div class="db-hint">Demo / Pilot</div>
-        </div>
-        <div class="db-card" onclick="selectDb('mysql')" id="db-mysql">
-          <div class="db-icon">🐬</div>
-          <div class="db-label">MySQL</div>
-          <div class="db-hint">Most common</div>
-        </div>
         <div class="db-card" onclick="selectDb('postgres')" id="db-postgres">
           <div class="db-icon">🐘</div>
           <div class="db-label">PostgreSQL</div>
-          <div class="db-hint">Modern ERPs</div>
+          <div class="db-hint">Required</div>
         </div>
         <div class="db-card" onclick="selectDb('mssql')" id="db-mssql">
           <div class="db-icon">🪟</div>
@@ -210,30 +200,7 @@
       </div>
 
       <!-- DB-specific fields -->
-      <div id="db-fields-sqlite">
-        <div class="form-group">
-          <label>SQLite File Path</label>
-          <input type="text" id="sqlite_path" value="./connector.db" placeholder="./connector.db" />
-          <span class="hint">Path relative to the connector directory on the college server</span>
-        </div>
-      </div>
-
-      <div id="db-fields-mysql" class="hidden">
-        <div class="form-row">
-          <div class="form-group"><label>Host <span class="req">*</span></label><input type="text" id="mysql_host" value="127.0.0.1" /></div>
-          <div class="form-group"><label>Port</label><input type="number" id="mysql_port" value="3306" /></div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label>Database Name <span class="req">*</span></label><input type="text" id="mysql_database" placeholder="college_erp" /></div>
-          <div class="form-group"><label>Username <span class="req">*</span></label><input type="text" id="mysql_user" placeholder="authenx_readonly" /></div>
-        </div>
-        <div class="form-group"><label>Password <span class="req">*</span></label><input type="password" id="mysql_password" placeholder="••••••••" /></div>
-        <div class="hint" style="margin-top:-8px;margin-bottom:16px">⚠️ Create a READ-ONLY MySQL user. AuthenX never writes to your database.</div>
-        <div class="form-group"><label>Install MySQL driver on connector server:</label>
-          <input type="text" value="cd authenx-connector && npm install mysql2" readonly style="background:#f6f9fc;font-family:monospace;color:#5469d4;" /></div>
-      </div>
-
-      <div id="db-fields-postgres" class="hidden">
+      <div id="db-fields-postgres">
         <div class="form-row">
           <div class="form-group"><label>Host <span class="req">*</span></label><input type="text" id="pg_host" value="127.0.0.1" /></div>
           <div class="form-group"><label>Port</label><input type="number" id="pg_port" value="5432" /></div>
@@ -461,7 +428,7 @@ const API_CANDIDATES = [
 
 let API = API_CANDIDATES[0] || 'http://127.0.0.1:3001';
 let apiResolved = false;
-let selectedDb = 'sqlite';
+let selectedDb = 'postgres';
 let onboardedCollege = null;
 let jwt = localStorage.getItem('authenx_token');
 
@@ -601,7 +568,7 @@ function selectDb(type) {
   selectedDb = type;
   document.querySelectorAll('.db-card').forEach(c => c.classList.remove('selected'));
   document.getElementById(`db-${type}`).classList.add('selected');
-  ['sqlite','mysql','postgres','mssql','api'].forEach(t => {
+  ['postgres','mssql','api'].forEach(t => {
     document.getElementById(`db-fields-${t}`).classList.toggle('hidden', t !== type);
   });
   const tableConf = document.getElementById('db-table-config');
@@ -614,10 +581,8 @@ function renderConnectionSummary() {
     `College: <b>${val('college_name')}</b>`,
     `DB Type: <b>${selectedDb.toUpperCase()}</b>`,
   ];
-  if (selectedDb === 'mysql') lines.push(`Host: <b>${val('mysql_host')}:${val('mysql_port')}</b>`, `Database: <b>${val('mysql_database')}</b>`);
   if (selectedDb === 'postgres') lines.push(`Host: <b>${val('pg_host')}:${val('pg_port')}</b>`, `Database: <b>${val('pg_database')}.${val('pg_schema')}</b>`);
   if (selectedDb === 'mssql') lines.push(`Server: <b>${val('mssql_host')}</b>`, `Database: <b>${val('mssql_database')}</b>`);
-  if (selectedDb === 'sqlite') lines.push(`Path: <b>${val('sqlite_path')}</b>`);
   if (selectedDb === 'api') lines.push(`Base URL: <b>${val('api_base_url')}</b>`, `Endpoint: <b>${val('api_endpoint')}</b>`);
   if (selectedDb !== 'api') lines.push(`Table: <b>${val('db_table')}</b>`, `Ref Column: <b>${val('db_ref_column')}</b>`);
   document.getElementById('conn-summary-text').innerHTML = lines.join('<br>');
@@ -679,8 +644,6 @@ function showResult(el, ok, msg) {
 function buildDbConfig() {
   const type = selectedDb;
   const base = { db_type: type };
-  if (type === 'sqlite')   base.db = { path: val('sqlite_path'), table: val('db_table'), ref_column: val('db_ref_column') };
-  if (type === 'mysql')    base.db = { host: val('mysql_host'), port: +val('mysql_port'), user: val('mysql_user'), password: val('mysql_password'), database: val('mysql_database'), table: val('db_table'), ref_column: val('db_ref_column') };
   if (type === 'postgres') base.db = { host: val('pg_host'), port: +val('pg_port'), user: val('pg_user'), password: val('pg_password'), database: val('pg_database'), schema: val('pg_schema') || 'public', table: val('db_table'), ref_column: val('db_ref_column') };
   if (type === 'mssql')    base.db = { host: val('mssql_host'), port: +val('mssql_port'), user: val('mssql_user'), password: val('mssql_password'), database: val('mssql_database'), schema: val('mssql_schema') || 'dbo', table: val('db_table'), ref_column: val('db_ref_column') };
   if (type === 'api')      base.api = { base_url: val('api_base_url'), endpoint: val('api_endpoint'), method: val('api_method'), auth_type: val('api_auth_type'), auth_token: val('api_token') };
@@ -813,7 +776,7 @@ function downloadPackage() {
     README: 'AuthenX Connector Package. Place in authenx-connector/ and run: node universal-connector.js',
     'college-config.json': cfg,
     '.env': `COLLEGE_ID=${onboardedCollege.college_id}\nCOLLEGE_NAME=${onboardedCollege.college_name}\nPORT=${val('connector_port') || 9000}\n`,
-    install_steps: ['1. Copy connector files to college server', '2. Place college-config.json in authenx-connector/', '3. Copy .env to authenx-connector/', selectedDb === 'mysql' ? '4. npm install mysql2' : selectedDb === 'postgres' ? '4. npm install pg' : selectedDb === 'mssql' ? '4. npm install mssql' : '4. No extra packages needed', '5. node universal-connector.js', '6. Test: curl http://localhost:9000/health'],
+    install_steps: ['1. Copy connector files to college server', '2. Place college-config.json in authenx-connector/', '3. Copy .env to authenx-connector/', selectedDb === 'postgres' ? '4. npm install pg' : selectedDb === 'mssql' ? '4. npm install mssql' : '4. No extra packages needed', '5. node universal-connector.js', '6. Test: curl http://localhost:9000/health'],
   };
   const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -823,8 +786,8 @@ function downloadPackage() {
 // ─── Utils ────────────────────────────────────────────────────────────────────
 function val(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
 
-// Pre-select SQLite on load
-selectDb('sqlite');
+// Pre-select PostgreSQL on load
+selectDb('postgres');
 </script>
 </body>
 </html>

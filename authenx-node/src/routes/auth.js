@@ -11,35 +11,35 @@ const LOCKOUT_MINUTES = 30;
 const REFRESH_TOKEN_DAYS = 7;
 
 /** Log a security event to the immutable security_events table */
-function logSecurityEvent(eventType, { actorId, actorEmail, targetId, ip, details }) {
-  run(`INSERT INTO security_events (id, event_type, actor_id, actor_email, target_id, ip_address, details)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+async function logSecurityEvent(eventType, { actorId, actorEmail, targetId, ip, details }) {
+  await run(`INSERT INTO security_events (id, event_type, actor_id, actor_email, target_id, ip_address, details)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
     [crypto.randomUUID(), eventType, actorId || null, actorEmail || null, targetId || null, ip || null, details || null]);
 }
 
 /** Check if account is locked due to too many failed attempts */
-function isAccountLocked(email) {
+async function isAccountLocked(email) {
   const cutoff = new Date(Date.now() - LOCKOUT_MINUTES * 60 * 1000).toISOString();
-  const recentFailures = query(
-    `SELECT COUNT(*) as cnt FROM login_attempts 
-     WHERE email = ? AND success = 0 AND created_at > ?`, [email, cutoff]
+  const recentFailures = await query(
+    `SELECT COUNT(*) as cnt FROM login_attempts
+     WHERE email = $1 AND success = 0 AND created_at > $2`, [email, cutoff]
   );
-  return (recentFailures[0]?.cnt || 0) >= MAX_LOGIN_ATTEMPTS;
+  return Number(recentFailures[0]?.cnt || 0) >= MAX_LOGIN_ATTEMPTS;
 }
 
 /** Get remaining login attempts before lockout */
-function getRemainingAttempts(email) {
+async function getRemainingAttempts(email) {
   const cutoff = new Date(Date.now() - LOCKOUT_MINUTES * 60 * 1000).toISOString();
-  const recentFailures = query(
-    `SELECT COUNT(*) as cnt FROM login_attempts 
-     WHERE email = ? AND success = 0 AND created_at > ?`, [email, cutoff]
+  const recentFailures = await query(
+    `SELECT COUNT(*) as cnt FROM login_attempts
+     WHERE email = $1 AND success = 0 AND created_at > $2`, [email, cutoff]
   );
-  return Math.max(0, MAX_LOGIN_ATTEMPTS - (recentFailures[0]?.cnt || 0));
+  return Math.max(0, MAX_LOGIN_ATTEMPTS - Number(recentFailures[0]?.cnt || 0));
 }
 
 /** Record a login attempt */
-function recordLoginAttempt(email, ip, success) {
-  run(`INSERT INTO login_attempts (id, email, ip_address, success) VALUES (?, ?, ?, ?)`,
+async function recordLoginAttempt(email, ip, success) {
+  await run(`INSERT INTO login_attempts (id, email, ip_address, success) VALUES ($1, $2, $3, $4)`,
     [crypto.randomUUID(), email, ip, success ? 1 : 0]);
 }
 
@@ -66,9 +66,9 @@ async function login(req, res, body) {
   const normalizedEmail = email.toLowerCase().trim();
 
   // Check if account is locked
-  if (isAccountLocked(normalizedEmail)) {
+  if (await isAccountLocked(normalizedEmail)) {
     logSecurity('account_locked_attempt', { email: normalizedEmail, ip });
-    logSecurityEvent('login_locked', { actorEmail: normalizedEmail, ip, details: `Account locked after ${MAX_LOGIN_ATTEMPTS} failed attempts` });
+    await logSecurityEvent('login_locked', { actorEmail: normalizedEmail, ip, details: `Account locked after ${MAX_LOGIN_ATTEMPTS} failed attempts` });
     res.writeHead(429, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       error: `Account is temporarily locked due to too many failed login attempts. Please try again after ${LOCKOUT_MINUTES} minutes.`,
@@ -76,23 +76,23 @@ async function login(req, res, body) {
     }));
   }
 
-  const user = queryOne('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
+  const user = await queryOne('SELECT * FROM users WHERE email = $1', [normalizedEmail]);
   if (!user) {
-    recordLoginAttempt(normalizedEmail, ip, false);
-    logSecurityEvent('login_failed', { actorEmail: normalizedEmail, ip, details: 'User not found' });
+    await recordLoginAttempt(normalizedEmail, ip, false);
+    await logSecurityEvent('login_failed', { actorEmail: normalizedEmail, ip, details: 'User not found' });
     res.writeHead(401, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       error: 'Invalid credentials',
-      remaining_attempts: getRemainingAttempts(normalizedEmail),
+      remaining_attempts: await getRemainingAttempts(normalizedEmail),
     }));
   }
 
   const ok = await verifyPassword(password, user.password_hash);
   if (!ok) {
-    recordLoginAttempt(normalizedEmail, ip, false);
-    const remaining = getRemainingAttempts(normalizedEmail);
+    await recordLoginAttempt(normalizedEmail, ip, false);
+    const remaining = await getRemainingAttempts(normalizedEmail);
     logSecurity('login_failed', { email: normalizedEmail, ip, remaining });
-    logSecurityEvent('login_failed', { actorId: user.id, actorEmail: normalizedEmail, ip, details: `Invalid password. ${remaining} attempts remaining.` });
+    await logSecurityEvent('login_failed', { actorId: user.id, actorEmail: normalizedEmail, ip, details: `Invalid password. ${remaining} attempts remaining.` });
     res.writeHead(401, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       error: 'Invalid credentials',
@@ -101,10 +101,10 @@ async function login(req, res, body) {
   }
 
   // Success — clear lockout window by recording success
-  recordLoginAttempt(normalizedEmail, ip, true);
+  await recordLoginAttempt(normalizedEmail, ip, true);
 
   // Check if MFA is enabled
-  const mfa = queryOne('SELECT * FROM mfa_secrets WHERE user_id = ? AND enabled = 1', [user.id]);
+  const mfa = await queryOne('SELECT * FROM mfa_secrets WHERE user_id = $1 AND enabled = 1', [user.id]);
   if (mfa) {
     // Issue a temporary MFA pending token (5 min expiry)
     const mfaToken = signJwt({ user_id: user.id, email: user.email, mfa_pending: true }, 300);
@@ -124,10 +124,10 @@ async function login(req, res, body) {
   const rawRefreshToken = generateRefreshToken();
   const refreshHash = hashRefreshToken(rawRefreshToken);
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  run(`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
+  await run(`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, $4)`,
     [crypto.randomUUID(), user.id, refreshHash, expiresAt]);
 
-  logSecurityEvent('login_success', { actorId: user.id, actorEmail: normalizedEmail, ip });
+  await logSecurityEvent('login_success', { actorId: user.id, actorEmail: normalizedEmail, ip });
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
@@ -144,7 +144,7 @@ async function login(req, res, body) {
  * Body: { refresh_token }
  * Returns: { token, expires_in }
  */
-function refreshAuth(req, res, body) {
+async function refreshAuth(req, res, body) {
   const { refresh_token } = body;
   if (!refresh_token) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -152,10 +152,10 @@ function refreshAuth(req, res, body) {
   }
 
   const tokenHash = hashRefreshToken(refresh_token);
-  const record = queryOne(
+  const record = await queryOne(
     `SELECT rt.*, u.email, u.role, u.college_id FROM refresh_tokens rt
      JOIN users u ON u.id = rt.user_id
-     WHERE rt.token_hash = ? AND rt.revoked = 0`, [tokenHash]
+     WHERE rt.token_hash = $1 AND rt.revoked = 0`, [tokenHash]
   );
 
   if (!record) {
@@ -164,7 +164,7 @@ function refreshAuth(req, res, body) {
   }
 
   if (new Date(record.expires_at) < new Date()) {
-    run('UPDATE refresh_tokens SET revoked = 1 WHERE id = ?', [record.id]);
+    await run('UPDATE refresh_tokens SET revoked = 1 WHERE id = $1', [record.id]);
     res.writeHead(401, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Refresh token has expired. Please login again.' }));
   }
@@ -186,7 +186,7 @@ function refreshAuth(req, res, body) {
  * Invalidates the refresh token (session invalidation).
  * Body: { refresh_token }
  */
-function logout(req, res, body) {
+async function logout(req, res, body) {
   const { refresh_token } = body;
   if (!refresh_token) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -194,10 +194,10 @@ function logout(req, res, body) {
   }
 
   const tokenHash = hashRefreshToken(refresh_token);
-  run('UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = ?', [tokenHash]);
+  await run('UPDATE refresh_tokens SET revoked = 1 WHERE token_hash = $1', [tokenHash]);
 
   const ip = req.socket.remoteAddress || 'unknown';
-  logSecurityEvent('logout', { ip, details: 'Refresh token revoked' });
+  await logSecurityEvent('logout', { ip, details: 'Refresh token revoked' });
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ message: 'Logged out successfully' }));
@@ -232,7 +232,7 @@ async function changePassword(req, res, body) {
     return res.end(JSON.stringify({ error: 'Password must contain uppercase, lowercase, number, and special character' }));
   }
 
-  const user = queryOne('SELECT * FROM users WHERE id = ?', [claims.user_id]);
+  const user = await queryOne('SELECT * FROM users WHERE id = $1', [claims.user_id]);
   if (!user) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'User not found' }));
@@ -241,20 +241,20 @@ async function changePassword(req, res, body) {
   // Verify current password
   const isValid = await verifyPassword(current_password, user.password_hash);
   if (!isValid) {
-    logSecurityEvent('password_change_failed', { actorId: user.id, actorEmail: user.email, ip, details: 'Invalid current password' });
+    await logSecurityEvent('password_change_failed', { actorId: user.id, actorEmail: user.email, ip, details: 'Invalid current password' });
     res.writeHead(401, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Current password is incorrect' }));
   }
 
   // Hash and store new password
   const newHash = await hashPassword(new_password);
-  run('UPDATE users SET password_hash = ?, must_change_password = 0, last_password_change = datetime(\'now\') WHERE id = ?',
+  await run('UPDATE users SET password_hash = $1, must_change_password = 0, last_password_change = NOW() WHERE id = $2',
     [newHash, user.id]);
 
   // Revoke all existing refresh tokens (force re-login on other devices)
-  run('UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?', [user.id]);
+  await run('UPDATE refresh_tokens SET revoked = 1 WHERE user_id = $1', [user.id]);
 
-  logSecurityEvent('password_changed', { actorId: user.id, actorEmail: user.email, ip });
+  await logSecurityEvent('password_changed', { actorId: user.id, actorEmail: user.email, ip });
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ message: 'Password changed successfully. Please login again.' }));
@@ -264,7 +264,7 @@ async function changePassword(req, res, body) {
  * POST /v1/auth/mfa/verify
  * Exchange MFA token + TOTP code for full auth tokens
  */
-function verifyMfaLogin(req, res, body) {
+async function verifyMfaLogin(req, res, body) {
   const { code, mfa_token } = body;
   if (!code || !mfa_token) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -281,9 +281,9 @@ function verifyMfaLogin(req, res, body) {
     return res.end(JSON.stringify({ error: 'MFA token invalid or expired' }));
   }
 
-  const user = queryOne('SELECT * FROM users WHERE id = ?', [claims.user_id]);
-  const mfa = queryOne('SELECT * FROM mfa_secrets WHERE user_id = ? AND enabled = 1', [claims.user_id]);
-  
+  const user = await queryOne('SELECT * FROM users WHERE id = $1', [claims.user_id]);
+  const mfa = await queryOne('SELECT * FROM mfa_secrets WHERE user_id = $1 AND enabled = 1', [claims.user_id]);
+
   if (!user || !mfa) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'MFA not configured' }));
@@ -299,15 +299,15 @@ function verifyMfaLogin(req, res, body) {
   } else if (code.length === 8) {
     // Backup code fallback
     const codeHash = crypto.createHash('sha256').update(code.toUpperCase()).digest('hex');
-    const backup = queryOne('SELECT id FROM mfa_backup_codes WHERE user_id = ? AND code_hash = ? AND used = 0', [user.id, codeHash]);
+    const backup = await queryOne('SELECT id FROM mfa_backup_codes WHERE user_id = $1 AND code_hash = $2 AND used = 0', [user.id, codeHash]);
     if (backup) {
-      run('UPDATE mfa_backup_codes SET used = 1, used_at = datetime(\'now\') WHERE id = ?', [backup.id]);
+      await run('UPDATE mfa_backup_codes SET used = 1, used_at = NOW() WHERE id = $1', [backup.id]);
       valid = true;
     }
   }
 
   if (!valid) {
-    logSecurityEvent('mfa_failed', { actorId: user.id, actorEmail: user.email, ip, details: 'Invalid MFA code' });
+    await logSecurityEvent('mfa_failed', { actorId: user.id, actorEmail: user.email, ip, details: 'Invalid MFA code' });
     res.writeHead(401, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Invalid MFA code' }));
   }
@@ -323,10 +323,10 @@ function verifyMfaLogin(req, res, body) {
   const rawRefreshToken = generateRefreshToken();
   const refreshHash = hashRefreshToken(rawRefreshToken);
   const expiresAt = new Date(Date.now() + REFRESH_TOKEN_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  run(`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES (?, ?, ?, ?)`,
+  await run(`INSERT INTO refresh_tokens (id, user_id, token_hash, expires_at) VALUES ($1, $2, $3, $4)`,
     [crypto.randomUUID(), user.id, refreshHash, expiresAt]);
 
-  logSecurityEvent('login_success_mfa', { actorId: user.id, actorEmail: user.email, ip });
+  await logSecurityEvent('login_success_mfa', { actorId: user.id, actorEmail: user.email, ip });
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
@@ -340,12 +340,12 @@ function verifyMfaLogin(req, res, body) {
 /**
  * POST /v1/auth/mfa/enroll
  */
-function enrollMfa(req, res) {
+async function enrollMfa(req, res) {
   const { requireAuth } = require('../middleware/auth.js');
   const claims = requireAuth(req, res);
   if (!claims) return;
 
-  const mfa = queryOne('SELECT * FROM mfa_secrets WHERE user_id = ? AND enabled = 1', [claims.user_id]);
+  const mfa = await queryOne('SELECT * FROM mfa_secrets WHERE user_id = $1 AND enabled = 1', [claims.user_id]);
   if (mfa) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'MFA already enabled' }));
@@ -353,13 +353,13 @@ function enrollMfa(req, res) {
 
   const { secret, base32 } = generateSecret();
   const secretEnc = encryptCode({ key: secret.toString('base64') });
-  
-  run('DELETE FROM mfa_secrets WHERE user_id = ?', [claims.user_id]);
-  run(`INSERT INTO mfa_secrets (id, user_id, secret_enc, enabled) VALUES (?, ?, ?, 0)`,
+
+  await run('DELETE FROM mfa_secrets WHERE user_id = $1', [claims.user_id]);
+  await run(`INSERT INTO mfa_secrets (id, user_id, secret_enc, enabled) VALUES ($1, $2, $3, 0)`,
     [crypto.randomUUID(), claims.user_id, secretEnc]);
 
   const uri = generateOtpAuthUri(claims.email, base32, 'AuthenX');
-  
+
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ uri, base32_secret: base32 }));
 }
@@ -367,7 +367,7 @@ function enrollMfa(req, res) {
 /**
  * POST /v1/auth/mfa/confirm
  */
-function confirmMfaSetup(req, res, body) {
+async function confirmMfaSetup(req, res, body) {
   const { requireAuth } = require('../middleware/auth.js');
   const claims = requireAuth(req, res);
   if (!claims) return;
@@ -378,7 +378,7 @@ function confirmMfaSetup(req, res, body) {
     return res.end(JSON.stringify({ error: 'code is required' }));
   }
 
-  const mfa = queryOne('SELECT * FROM mfa_secrets WHERE user_id = ? AND enabled = 0', [claims.user_id]);
+  const mfa = await queryOne('SELECT * FROM mfa_secrets WHERE user_id = $1 AND enabled = 0', [claims.user_id]);
   if (!mfa) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'No pending MFA enrollment found' }));
@@ -386,22 +386,22 @@ function confirmMfaSetup(req, res, body) {
 
   const payload = decryptCode(mfa.secret_enc);
   const secret = Buffer.from(payload.key, 'base64');
-  
+
   if (!verifyTOTP(code, secret)) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Invalid TOTP code' }));
   }
 
-  run('UPDATE mfa_secrets SET enabled = 1, verified_at = datetime(\'now\') WHERE id = ?', [mfa.id]);
-  
+  await run('UPDATE mfa_secrets SET enabled = 1, verified_at = NOW() WHERE id = $1', [mfa.id]);
+
   const backupCodes = generateBackupCodes();
-  run('DELETE FROM mfa_backup_codes WHERE user_id = ?', [claims.user_id]);
+  await run('DELETE FROM mfa_backup_codes WHERE user_id = $1', [claims.user_id]);
   for (const c of backupCodes) {
-    run('INSERT INTO mfa_backup_codes (id, user_id, code_hash) VALUES (?, ?, ?)',
+    await run('INSERT INTO mfa_backup_codes (id, user_id, code_hash) VALUES ($1, $2, $3)',
       [crypto.randomUUID(), claims.user_id, crypto.createHash('sha256').update(c.toUpperCase()).digest('hex')]);
   }
 
-  logSecurityEvent('mfa_enrolled', { actorId: claims.user_id, actorEmail: claims.email });
+  await logSecurityEvent('mfa_enrolled', { actorId: claims.user_id, actorEmail: claims.email });
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ message: 'MFA enabled', backup_codes: backupCodes }));

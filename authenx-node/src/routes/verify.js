@@ -20,7 +20,7 @@ function isCvrCollege(collegeId, collegeShortCode) {
  * Employer pastes an AuthenX Code — we decrypt and return token metadata.
  * Does NOT hit the college ERP — just decrypts the code and returns status.
  */
-function decodeCode(req, res, body) {
+async function decodeCode(req, res, body) {
   const claims = requireAuth(req, res);
   if (!claims) return;
 
@@ -38,13 +38,13 @@ function decodeCode(req, res, body) {
     return res.end(JSON.stringify({ error: 'Invalid or tampered AuthenX Code', detail: err.message }));
   }
 
-  const token = queryOne(`
+  const token = await queryOne(`
     SELECT t.id, t.status, t.credential_type, t.canonical_hash, t.schema_version,
            t.student_ref_token, t.issued_at, t.revocation_reason, t.revoked_at,
            c.name as college_name, c.short_code, c.id as college_id
     FROM verification_tokens t
     JOIN colleges c ON c.id = t.college_id
-    WHERE t.id = ?
+    WHERE t.id = $1
   `, [payload.token_id]);
 
   if (!token) {
@@ -53,9 +53,9 @@ function decodeCode(req, res, body) {
   }
 
   // Log the decode event
-  run(`INSERT INTO verification_requests
+  await run(`INSERT INTO verification_requests
        (id, token_id, employer_name, request_type, result, hash_match, sig_valid)
-       VALUES (?, ?, ?, 'code_decode', ?, 1, 1)`,
+       VALUES ($1, $2, $3, 'code_decode', $4, 1, 1)`,
     [crypto.randomUUID(), token.id,
      claims.email || 'unknown',
      token.status === 'active' ? 'verified' : 'revoked']);
@@ -115,10 +115,10 @@ async function liveVerify(req, res, body) {
   }
 
   // Step 2: Fetch token and college info
-  const token = queryOne(`
+  const token = await queryOne(`
     SELECT t.*, c.connector_url, c.public_key_hex, c.shared_secret, c.name as college_name, c.short_code as college_short_code
     FROM verification_tokens t JOIN colleges c ON c.id = t.college_id
-    WHERE t.id = ?
+    WHERE t.id = $1
   `, [codePayload.token_id]);
 
   if (!token) {
@@ -129,9 +129,9 @@ async function liveVerify(req, res, body) {
   // Fast path: revoked tokens don't need live connector check
   if (token.status === 'revoked') {
     const latency = Date.now() - start;
-    run(`INSERT INTO verification_requests
+    await run(`INSERT INTO verification_requests
          (id, token_id, employer_name, request_type, result, latency_ms)
-         VALUES (?, ?, ?, 'live_verify', 'revoked', ?)`,
+         VALUES ($1, $2, $3, 'live_verify', 'revoked', $4)`,
       [crypto.randomUUID(), token.id, claims.email, latency]);
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -159,7 +159,7 @@ async function liveVerify(req, res, body) {
   try {
     connectorData = await callWithBreaker(token.college_id, () =>
       callConnector(
-        token.connector_url, 
+        token.connector_url,
         { student_ref_token: token.student_ref_token, nonce },
         token.college_id,
         token.shared_secret,
@@ -172,9 +172,9 @@ async function liveVerify(req, res, body) {
     const isSigValid = verifyEd25519(token.canonical_hash, token.issuance_signature, token.public_key_hex);
     const latency    = Date.now() - start;
 
-    run(`INSERT INTO verification_requests
+    await run(`INSERT INTO verification_requests
          (id, token_id, employer_name, request_type, result, hash_match, sig_valid, latency_ms, nonce)
-         VALUES (?, ?, ?, 'live_verify', ?, 1, ?, ?, ?)`,
+         VALUES ($1, $2, $3, 'live_verify', $4, 1, $5, $6, $7)`,
       [crypto.randomUUID(), token.id, claims.email,
        token.status === 'active' ? 'verified' : 'error',
        isSigValid ? 1 : 0, latency, nonce]);
@@ -227,20 +227,20 @@ async function liveVerify(req, res, body) {
   const latency = Date.now() - start;
 
   // Audit log (NEVER stores student PII — only cryptographic metadata)
-  run(`INSERT INTO verification_requests
+  await run(`INSERT INTO verification_requests
        (id, token_id, employer_name, request_type, result, hash_match, sig_valid, latency_ms, nonce)
-       VALUES (?, ?, ?, 'live_verify', ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, 'live_verify', $4, $5, $6, $7, $8)`,
     [crypto.randomUUID(), token.id, claims.email, result,
      hashMatch ? 1 : 0, (isSigValid && liveSigValid) ? 1 : 0, latency, nonce]);
 
   // Update token verification stats
   try {
-    run(`UPDATE verification_tokens
+    await run(`UPDATE verification_tokens
          SET verification_count = verification_count + 1,
-             last_verified_at   = datetime('now'),
-             last_result        = ?
-         WHERE id = ?`, [result, token.id]);
-  } catch {} // Non-critical; new columns may not exist on older DBs
+             last_verified_at   = NOW(),
+             last_result        = $1
+         WHERE id = $2`, [result, token.id]);
+  } catch {} // Non-critical
 
   const responseBody = {
     result,
@@ -258,7 +258,7 @@ async function liveVerify(req, res, body) {
       credential_type: connectorData.credential_type,
       cgpa:            connectorData.cgpa,
       graduation_year: connectorData.graduation_year,
-      issue_date:      connectorData.issue_date || '', // needed by verified.html display
+      issue_date:      connectorData.issue_date || '',
     } : null,
     data_source: connectorData.source || 'connector_live',
     lookup_path: connectorData.lookup_path || 'AuthenXCode -> verification_tokens.id -> student_ref_token -> connector /verify',
@@ -430,7 +430,7 @@ async function mockConnectorVerify({ student_ref_token, nonce }, ctx = {}) {
         sourceTable = 'cvr_mock_erp_students';
       }
     } catch {
-      // If PostgreSQL is unavailable, we still support demo verifications via in-memory fallback.
+      // If PostgreSQL is unavailable, fall back to in-memory mock data.
     }
   }
 
@@ -441,8 +441,8 @@ async function mockConnectorVerify({ student_ref_token, nonce }, ctx = {}) {
   if (!student) throw new Error(`Student not found in mock ERP: ${student_ref_token}`);
 
   const token = collegeId
-    ? queryOne('SELECT college_id FROM verification_tokens WHERE college_id = ? AND student_ref_token = ?', [collegeId, student_ref_token])
-    : queryOne('SELECT college_id FROM verification_tokens WHERE student_ref_token = ?', [student_ref_token]);
+    ? await queryOne('SELECT college_id FROM verification_tokens WHERE college_id = $1 AND student_ref_token = $2', [collegeId, student_ref_token])
+    : await queryOne('SELECT college_id FROM verification_tokens WHERE student_ref_token = $1', [student_ref_token]);
   const issuer_id = token ? token.college_id : (collegeId || 'mock-college');
   const canonical = buildCJ({ ...student, issuer_id, student_ref_token });
   const liveHash  = sha256fn(canonical);

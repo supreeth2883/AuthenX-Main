@@ -3,7 +3,26 @@
  * API calls, auth, navigation, and utilities
  */
 
-const API_BASE = (localStorage.getItem('authenx_api_base') || 'http://localhost:3000') + '/v1';
+function isTrustedLocalOrigin(origin) {
+  try {
+    const u = new URL(origin);
+    if (!['http:', 'https:'].includes(u.protocol)) return false;
+    if (u.hostname === 'localhost') return true;
+    if (/^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(u.hostname)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+const DEFAULT_API_ORIGIN = (() => {
+  const saved = localStorage.getItem('authenx_api_base');
+  if (saved && isTrustedLocalOrigin(saved)) return saved;
+  const isSafePageOrigin = isTrustedLocalOrigin(window.location.origin);
+  return isSafePageOrigin ? window.location.origin : 'http://127.0.0.1:3001';
+})();
+
+const API_BASE = `${DEFAULT_API_ORIGIN}/v1`;
 
 // ─── HTML escape helper (prevents XSS when inserting into innerHTML) ──────────
 function esc(str) {

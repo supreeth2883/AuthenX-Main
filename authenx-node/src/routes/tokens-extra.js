@@ -7,11 +7,11 @@ const { requireAuth, requireRole } = require('../middleware/auth.js');
  * GET /v1/tokens/:id/details
  * Returns extended token info including verification stats.
  */
-function getTokenDetails(req, res, tokenId) {
+async function getTokenDetails(req, res, tokenId) {
   const claims = requireAuth(req, res);
   if (!claims) return;
 
-  const token = queryOne(`
+  const token = await queryOne(`
     SELECT t.id, t.college_id, t.student_ref_token, t.canonical_hash,
            t.issuance_signature, t.schema_version, t.credential_type,
            t.status, t.revocation_reason, t.revoked_at, t.issued_at,
@@ -20,7 +20,7 @@ function getTokenDetails(req, res, tokenId) {
            c.name as college_name, c.short_code
     FROM verification_tokens t
     JOIN colleges c ON c.id = t.college_id
-    WHERE t.id = ?
+    WHERE t.id = $1
   `, [tokenId]);
 
   if (!token) {
@@ -41,7 +41,6 @@ function getTokenDetails(req, res, tokenId) {
  * POST /v1/tokens/correct
  * Creates a correction token: marks old token as 'superseded', issues a replacement.
  * Body: { token_id, reason }
- * The correction re-issues via demo path (connector data re-fetch not implemented here).
  */
 async function correctToken(req, res, body) {
   const claims = requireAuth(req, res);
@@ -54,8 +53,8 @@ async function correctToken(req, res, body) {
     return res.end(JSON.stringify({ error: 'token_id and reason are required' }));
   }
 
-  const original = queryOne(`
-    SELECT * FROM verification_tokens WHERE id = ?
+  const original = await queryOne(`
+    SELECT * FROM verification_tokens WHERE id = $1
   `, [token_id]);
 
   if (!original) {
@@ -73,25 +72,24 @@ async function correctToken(req, res, body) {
     return res.end(JSON.stringify({ error: `Token is ${original.status} — only active tokens can be corrected` }));
   }
 
-  // Create new token record (same hash/sig, new ID — admin will re-issue via normal flow)
   const newId = crypto.randomUUID();
   const now = new Date().toISOString();
 
   try {
-    transaction(() => {
+    await transaction(async (db) => {
       // Mark old as superseded
-      run(`
+      await db.run(`
         UPDATE verification_tokens
-        SET status = 'superseded', superseded_by = ?, revocation_reason = ?, revoked_at = ?
-        WHERE id = ?
+        SET status = 'superseded', superseded_by = $1, revocation_reason = $2, revoked_at = $3
+        WHERE id = $4
       `, [newId, reason, now, token_id]);
 
       // Insert new token as a copy with 'corrected' marker pointing back
-      run(`
+      await db.run(`
         INSERT INTO verification_tokens
           (id, college_id, student_ref_token, canonical_hash, issuance_signature,
            schema_version, credential_type, status, correction_token_id, issued_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'active', $8, $9)
       `, [
         newId, original.college_id, original.student_ref_token,
         original.canonical_hash, original.issuance_signature,

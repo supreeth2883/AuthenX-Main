@@ -10,11 +10,11 @@ const {
 const crypto = require('node:crypto');
 
 /** GET /v1/colleges — list all active colleges */
-function listColleges(req, res) {
+async function listColleges(req, res) {
   const claims = requireAuth(req, res);
   if (!claims) return;
 
-  const colleges = query(`
+  const colleges = await query(`
     SELECT id, name, short_code, public_key_hex, connector_url, active, created_at
     FROM colleges WHERE active = 1 ORDER BY name
   `);
@@ -23,13 +23,13 @@ function listColleges(req, res) {
 }
 
 /** GET /v1/colleges/:id — single college details */
-function getCollege(req, res, id) {
+async function getCollege(req, res, id) {
   const claims = requireAuth(req, res);
   if (!claims) return;
 
-  const college = queryOne(`
+  const college = await queryOne(`
     SELECT id, name, short_code, public_key_hex, connector_url, active, created_at
-    FROM colleges WHERE id = ?
+    FROM colleges WHERE id = $1
   `, [id]);
 
   if (!college) {
@@ -42,7 +42,7 @@ function getCollege(req, res, id) {
 }
 
 /** POST /v1/colleges — register a new college (super_admin only) */
-function createCollege(req, res, body) {
+async function createCollege(req, res, body) {
   const claims = requireAuth(req, res);
   if (!claims) return;
   if (!requireRole(claims, 'super_admin', res)) return;
@@ -53,7 +53,7 @@ function createCollege(req, res, body) {
     return res.end(JSON.stringify({ error: 'name, short_code, public_key_hex, connector_url required' }));
   }
 
-  const existing = queryOne('SELECT id FROM colleges WHERE short_code = ?', [short_code]);
+  const existing = await queryOne('SELECT id FROM colleges WHERE short_code = $1', [short_code]);
   if (existing) {
     res.writeHead(409, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'College with this short_code already exists' }));
@@ -62,8 +62,8 @@ function createCollege(req, res, body) {
   const id = crypto.randomUUID();
   const shared_secret = crypto.randomBytes(32).toString('hex');
 
-  run(`INSERT INTO colleges (id, name, short_code, public_key_hex, connector_url, shared_secret)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+  await run(`INSERT INTO colleges (id, name, short_code, public_key_hex, connector_url, shared_secret)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
     [id, name, short_code.toUpperCase(), public_key_hex, connector_url, shared_secret]);
 
   res.writeHead(201, { 'Content-Type': 'application/json' });
@@ -131,10 +131,16 @@ async function provisionCollegePostgres(college_id, short_code) {
     }
   }
 
-  run(
-    `INSERT OR REPLACE INTO college_postgres_provisioning
+  await run(
+    `INSERT INTO college_postgres_provisioning
        (college_id, db_name, db_user, db_password_enc, provisioned, provisioned_at)
-     VALUES (?,?,?,?,?,?)`,
+     VALUES ($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (college_id) DO UPDATE SET
+       db_name = EXCLUDED.db_name,
+       db_user = EXCLUDED.db_user,
+       db_password_enc = EXCLUDED.db_password_enc,
+       provisioned = EXCLUDED.provisioned,
+       provisioned_at = EXCLUDED.provisioned_at`,
     [college_id, db_name, db_user, db_password_enc, provisioned, provisioned_at]
   );
 
@@ -173,7 +179,7 @@ async function onboardCollege(req, res, body) {
   const sc = short_code.toUpperCase().slice(0, 10);
 
   // ── Uniqueness checks ─────────────────────────────────────────────────────
-  const existingCode = queryOne('SELECT id FROM colleges WHERE short_code = ?', [sc]);
+  const existingCode = await queryOne('SELECT id FROM colleges WHERE short_code = $1', [sc]);
   if (existingCode) {
     res.writeHead(409, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
@@ -181,8 +187,8 @@ async function onboardCollege(req, res, body) {
     }));
   }
 
-  const existingEmail = queryOne(
-    "SELECT id FROM users WHERE email = ? AND role = 'college_admin'",
+  const existingEmail = await queryOne(
+    "SELECT id FROM users WHERE email = $1 AND role = 'college_admin'",
     [admin_email.toLowerCase()]
   );
   if (existingEmail) {
@@ -207,24 +213,24 @@ async function onboardCollege(req, res, body) {
 
   try {
     // ── Persist college ───────────────────────────────────────────────────
-    run(
+    await run(
       `INSERT INTO colleges
          (id, name, short_code, admin_email, public_key_hex, connector_url, connector_port, shared_secret)
-       VALUES (?,?,?,?,?,?,?,?)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [college_id, name, sc, admin_email.toLowerCase(), publicKeyHex, connector_url, connector_port, shared_secret]
     );
 
     // ── Persist keys ──────────────────────────────────────────────────────
-    run(
+    await run(
       `INSERT INTO college_keys (college_id, public_key_hex, private_key_enc)
-       VALUES (?,?,?)`,
+       VALUES ($1, $2, $3)`,
       [college_id, publicKeyHex, private_key_enc]
     );
 
     // ── Persist college admin user ────────────────────────────────────────
-    run(
+    await run(
       `INSERT INTO users (id, email, password_hash, role, college_id, must_change_password)
-       VALUES (?,?,?,?,?,?)`,
+       VALUES ($1, $2, $3, $4, $5, $6)`,
       [crypto.randomUUID(), admin_email.toLowerCase(), password_hash, 'college_admin', college_id, 1]
     );
 
@@ -234,10 +240,17 @@ async function onboardCollege(req, res, body) {
     // ── E) Connector config metadata ──────────────────────────────────────
     if (connector_config) {
       const { field_mapping, ...cfgWithoutMapping } = connector_config;
-      run(
-        `INSERT OR REPLACE INTO college_connector_configs
+      await run(
+        `INSERT INTO college_connector_configs
            (college_id, erp_type, connector_url, connector_config_json, field_mapping_json, onboarding_completed)
-         VALUES (?,?,?,?,?,1)`,
+         VALUES ($1, $2, $3, $4, $5, 1)
+         ON CONFLICT (college_id) DO UPDATE SET
+           erp_type = EXCLUDED.erp_type,
+           connector_url = EXCLUDED.connector_url,
+           connector_config_json = EXCLUDED.connector_config_json,
+           field_mapping_json = EXCLUDED.field_mapping_json,
+           onboarding_completed = 1,
+           updated_at = NOW()`,
         [
           college_id,
           connector_config.db_type || 'unknown',
@@ -250,9 +263,9 @@ async function onboardCollege(req, res, body) {
   } catch (err) {
     console.error('[onboard] DB error:', err.message);
     // Attempt rollback by deleting the partial college record
-    try { run('DELETE FROM college_keys WHERE college_id = ?', [college_id]); } catch {}
-    try { run('DELETE FROM users WHERE college_id = ?', [college_id]); } catch {}
-    try { run('DELETE FROM colleges WHERE id = ?', [college_id]); } catch {}
+    try { await run('DELETE FROM college_keys WHERE college_id = $1', [college_id]); } catch {}
+    try { await run('DELETE FROM users WHERE college_id = $1', [college_id]); } catch {}
+    try { await run('DELETE FROM colleges WHERE id = $1', [college_id]); } catch {}
     res.writeHead(500, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Failed to onboard college: ' + err.message }));
   }

@@ -125,7 +125,7 @@
             <div id="adapter-info">
               <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--ax-border)">
                 <span style="font-size:13px;color:var(--ax-muted)">DB Type</span>
-                <span style="font-size:13px;font-weight:600;color:var(--ax-text)" id="adapter-db">SQLite</span>
+                <span style="font-size:13px;font-weight:600;color:var(--ax-text)" id="adapter-db">PostgreSQL</span>
               </div>
               <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--ax-border)">
                 <span style="font-size:13px;color:var(--ax-muted)">Endpoint</span>
@@ -198,7 +198,7 @@ async function checkHealth() {
       connectorUrl = data.connector_url || connectorUrl;
       document.getElementById('connector-url-display').textContent = connectorUrl || '—';
       document.getElementById('adapter-url').textContent = (connectorUrl || 'http://localhost:9001').replace('http://','');
-      document.getElementById('adapter-db').textContent = data.db_type || 'SQLite';
+      document.getElementById('adapter-db').textContent = data.db_type || 'PostgreSQL';
       document.getElementById('adapter-mode').textContent = data.mode || 'Read-only';
       document.getElementById('connector-status').className = 'connector-status live';
       document.getElementById('connector-status').innerHTML = '<div class="pulse-dot"></div> Live ERP';

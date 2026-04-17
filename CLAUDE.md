@@ -1,16 +1,25 @@
 # CLAUDE.md
 
-- codex will review this file after the changes.
-
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What This Project Is
 
 AuthenX is a **privacy-first academic credential verification platform** for Indian colleges. The core design principle: student data never leaves college ERP systems. AuthenX stores only cryptographic proofs (hashes + Ed25519 signatures), never raw academic data.
 
-## Running the Stack
+## Current Branch State (`backend-change`)
 
-### Active Production Implementation (`authenx-node/`)
+⚠️ **This branch has structural changes from `main`:**
+- ❌ `authenx-connector/` deleted — live verification cannot work without an external connector
+- ❌ `authenx-ledger/` deleted
+- ❌ `authenx/` (TypeScript monorepo) deleted
+- ❌ `docker-compose.yml`, `Dockerfile`, `Dockerfile.connector` deleted
+- ✅ `authenx-node/` (main server) — active and production-grade
+- ✅ `authenx-hsm/` (HSM key vault) — active
+- ✅ `ui/` (all frontends) — active
+
+**Without connectors, `POST /v1/verify/live` cannot work** — except for CVR College which has an in-process mock ERP (`src/mock-erp/cvr-erp.js`).
+
+## Running the Stack
 
 ```bash
 # Terminal 1: Start the HSM (key vault, required first)
@@ -20,53 +29,43 @@ cd authenx-hsm && node server.js
 cd authenx-node && node src/server.js
 ```
 
-Requires **Node.js 22+** — uses `node:sqlite` built-in. Zero npm dependencies.
+Or use the PowerShell startup script: `start-backend-stack.ps1`
 
-### Docker (Full Stack)
+Requires **Node.js 22+**. One npm dependency: `pg` (PostgreSQL driver — main AuthenX DB, mock ERP, and college DB provisioning).
 
-```bash
-docker-compose up -d
-# Starts: main server (:3000) + HSM (:9099)
-```
-
-### TypeScript Monorepo (`authenx/`) — In Progress
-
-```bash
-cd authenx && npm install
-npm run dev          # Runs API + connector + web concurrently
-npm run build        # Build all workspaces
-npm run db:migrate   # Run DB migrations (PostgreSQL)
-```
+- Main app + web UI: http://localhost:3000
+- HSM: http://localhost:9099
+- UI files served at: http://localhost:3000/ui/...
 
 ## Architecture
 
-The system has three tiers communicating over HTTP:
-
 ```
-Employer/College UI → Main Server (:3000) → College Connectors (external URLs) → HSM (:9099)
+Employer/College UI → Main Server (:3000) → College Connectors (external, DELETED) → HSM (:9099)
 ```
 
 ### Main Server (`authenx-node/`)
 
-- **Zero npm dependencies** — uses only Node.js 22 built-ins (`crypto`, `http`, `sqlite`)
-- SQLite database (`authenx.db`) — 17 tables; never stores student names, CGPA, or personal data
-- Serves all frontend UIs from `ui/` as static files; routes under `/v1/`
+- One npm dependency: `pg` — PostgreSQL driver used by `db/client.js` (main DB), `mock-erp/cvr-erp.js` (CVR mock), and `routes/colleges.js` (provisioning)
+- PostgreSQL database (`AUTHENX_PG_*` env vars) — 18 tables; never stores student names, CGPA, or personal data
+- Serves all frontend UIs from `ui/` as static files under `/ui/`; API routes under `/v1/`
 - Multi-tenant: each college has its own Ed25519 keypair and HMAC shared secret
+- Built-in verification cache (`src/cache/verification-cache.js`): 30s TTL for verified results, 5s for revoked
 
 ### HSM (`authenx-hsm/`)
 
 - Localhost-only HTTP service on port 9099
 - Stores one Ed25519 key pair per college in `keys/{college-id}.json`
-- All private keys AES-256-GCM encrypted at rest (HSM_MASTER_KEY)
+- All private keys AES-256-GCM encrypted at rest (`HSM_MASTER_KEY`)
 - No keys ever leave this service — callers send data to sign, receive only the signature
 - Endpoints: `POST /sign`, `POST /rotate-key`, `GET /keys`, `GET /health`
 
-### College Connectors (external)
+### College Connectors (external — deleted on this branch)
 
 - One HTTP service per college, running at the college's own infrastructure
 - URL registered at onboarding time (`colleges.connector_url`)
 - Must expose: `GET /health`, `POST /verify` (HMAC-authenticated)
-- Bridges college ERP (any DB type) → canonical JSON fingerprint → HSM for signing
+- Bridges college ERP → canonical JSON fingerprint → HSM for signing
+- **CVR College exception:** has an in-process mock (`src/mock-erp/cvr-erp.js`) backed by PostgreSQL
 
 ### Frontend UIs (`ui/`)
 
@@ -76,6 +75,7 @@ Employer/College UI → Main Server (:3000) → College Connectors (external URL
 | `ui/college/` | 11 pages: login, dashboard, issue, tokens, students, audit, security, connector mgmt, disclosure policy, onboarding, code-issued |
 | `ui/employer/` | 5 pages: login, verify, verified, revoked, decoding |
 | `ui/shared/` | `offline-auth.js`, `authenx-code.js` |
+| `ui/test/` | `visual-code-test.html` |
 
 ## Cryptography
 
@@ -116,7 +116,7 @@ All crypto is in `authenx-node/src/crypto/index.js` using Node.js built-ins only
 
 Super-admin-only endpoint. One call performs the full onboarding:
 
-1. Creates college record (short_code unique, admin_email unique among college_admin users)
+1. Creates college record (`short_code` unique, `admin_email` unique among college_admin users)
 2. Generates Ed25519 keypair — public key stored in `colleges` and `college_keys`; private key AES-encrypted in `college_keys.private_key_enc`
 3. Creates `college_admin` user with hashed temp password (`must_change_password=1`)
 4. Attempts PostgreSQL provisioning if `PG_PROVISION_HOST` env var is set (non-fatal if unavailable — stored with `provisioned=0`)
@@ -124,16 +124,17 @@ Super-admin-only endpoint. One call performs the full onboarding:
 
 Response includes `admin_temp_password` and `shared_secret` — **shown only once**.
 
-## Database Schema (17 tables)
+## Database Schema (18 tables)
 
 | Table | Purpose |
 |-------|---------|
 | `colleges` | id, name, short_code, admin_email, public_key_hex, connector_url, connector_port, shared_secret |
 | `college_keys` | Ed25519 keypair per college; private_key_enc = AES-256-GCM encrypted |
 | `college_postgres_provisioning` | PostgreSQL db_name, db_user, encrypted db_password |
-| `college_connector_configs` | ERP type, connector_config_json, field_mapping_json |
+| `college_connector_configs` | ERP type, connector_config_json, field_mapping_json, onboarding_completed |
 | `users` | email, password_hash (scrypt), role, college_id, must_change_password |
-| `verification_tokens` | token_id, college_id, student_ref_token, canonical_hash, issuance_signature |
+| `verification_tokens` | token_id, college_id, student_ref_token, canonical_hash, issuance_signature, status |
+| `issued_authenx_codes` | Encrypted AuthenX codes stored for student code re-fetch |
 | `verification_requests` | Audit trail of every verification attempt |
 | `revocation_events` | Immutable revocation log |
 | `disclosure_policies` | Field visibility rules per college |
@@ -154,33 +155,27 @@ Response includes `admin_temp_password` and `shared_secret` — **shown only onc
 | college_admin | iitb@authenx.in | College@123 |
 | employer | recruiter@infosys.com | Employer@123 |
 
-## Two Parallel Implementations
-
-| | `authenx-node/` | `authenx/` |
-|--|----------------|-----------|
-| Status | **Active / production** | In progress |
-| Runtime | Node 22, zero deps | TypeScript, Fastify |
-| DB | SQLite (built-in) | PostgreSQL |
-| Frontend | Static HTML in `ui/` | React (Vite) |
-| Onboarding | Full wizard backend | — |
-
-Always confirm which implementation the user is working on before making changes.
+All seeded accounts have `must_change_password = 1` — password change enforced on first login.
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `authenx-node/src/server.js` | Main HTTP server — all route registration, 34+ routes |
+| `authenx-node/src/server.js` | Main HTTP server — all route registration (~45 routes) |
 | `authenx-node/src/routes/colleges.js` | College CRUD + `onboardCollege()` wizard endpoint |
 | `authenx-node/src/routes/verify.js` | Live verification + code decode logic |
+| `authenx-node/src/routes/connector-proxy.js` | Server-side HMAC proxy to college connectors |
 | `authenx-node/src/crypto/index.js` | All crypto primitives — Ed25519, AES-GCM, JWT, scrypt, TOTP helpers |
-| `authenx-node/src/db/schema.js` | SQLite schema — 17 tables |
-| `authenx-node/src/db/client.js` | DB client + auto-migrations |
+| `authenx-node/src/db/schema.js` | PostgreSQL DDL — 18 tables |
+| `authenx-node/src/db/client.js` | pg.Pool client + initDb() |
 | `authenx-node/src/middleware/auth.js` | JWT verification + RBAC |
 | `authenx-node/src/middleware/hmac-auth.js` | Inter-service HMAC verification |
 | `authenx-node/src/middleware/fraud-detector.js` | Behavioral anomaly detection |
 | `authenx-node/src/middleware/circuit-breaker.js` | Per-connector resilience |
+| `authenx-node/src/middleware/rate-limiter.js` | Sliding window rate limiter (verify: 30/min/user, issue: 20/min/college) |
 | `authenx-node/src/middleware/dpdp.js` | India DPDP Act 2023 compliance |
+| `authenx-node/src/cache/verification-cache.js` | Short-lived in-memory verification result cache |
+| `authenx-node/src/mock-erp/cvr-erp.js` | PostgreSQL-backed mock ERP for CVR College (CVRH) |
 | `authenx-hsm/server.js` | Key vault HTTP service |
 | `authenx-hsm/key-store.js` | Ed25519 keypair management with envelope encryption |
 | `ui/admin/collegeonboarding.html` | 5-step super-admin onboarding wizard |
@@ -194,13 +189,18 @@ Always confirm which implementation the user is working on before making changes
 | `JWT_SECRET` | ✅ | HS256 signing key |
 | `HSM_MASTER_KEY` | ✅ | AES-256-GCM master key for HSM key encryption |
 | `NODE_ENV` | ✅ | Set `production` to enforce required secrets |
-| `AES_KEY_HEX` | — | AES key for AuthenX Codes (persisted to aes_key.json in dev) |
+| `AES_KEY_HEX` | — | AES key for AuthenX Codes (persisted to `aes_key.json` in dev) |
 | `PORT` | — | Default 3000 |
 | `HSM_PORT` | — | Default 9099 |
-| `DB_PATH` | — | Default `./authenx.db` |
+| `AUTHENX_PG_HOST` | — | Default localhost |
+| `AUTHENX_PG_PORT` | — | Default 5432 |
+| `AUTHENX_PG_USER` | — | Default postgres |
+| `AUTHENX_PG_PASSWORD` | ✅ prod | Main AuthenX DB password |
+| `AUTHENX_PG_DATABASE` | — | Default postgres |
 | `CORS_ALLOWED_ORIGINS` | — | Comma-separated allowed origins |
 | `LOG_LEVEL` | — | debug/info/warn/error |
 | `PG_PROVISION_HOST` | — | Enable PostgreSQL auto-provisioning at onboarding |
 | `PG_PROVISION_PORT` | — | Default 5432 |
 | `PG_PROVISION_USER` | — | Default postgres |
-| `PG_PROVISION_PASSWORD` | — | PostgreSQL admin password |
+| `PG_PROVISION_PASSWORD` | — | PostgreSQL provisioning admin password |
+| `CVR_ERP_PG_DB` | — | PostgreSQL database for CVR mock ERP (default: postgres) |

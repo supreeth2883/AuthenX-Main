@@ -709,8 +709,7 @@ Connector fetches data directly from a read-only DB path.
 
 Works with:
 
-* PostgreSQL
-* MySQL
+* PostgreSQL (primary — AuthenX main DB uses PostgreSQL)
 * SQL Server
 * Oracle
 * others

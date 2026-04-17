@@ -177,8 +177,30 @@ input::placeholder { color: var(--ax-subtle); }
 
 <script src="../shared/offline-auth.js"></script>
 <script>
+function isTrustedLocalOrigin(origin) {
+  try {
+    const u = new URL(origin);
+    if (!['http:', 'https:'].includes(u.protocol)) return false;
+    if (u.hostname === 'localhost') return true;
+    if (/^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(u.hostname)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+const ORIGIN_CANDIDATE = isTrustedLocalOrigin(window.location.origin)
+  ? window.location.origin
+  : null;
+
+const SAVED_API_BASE = (() => {
+  const saved = localStorage.getItem('authenx_api_base');
+  return isTrustedLocalOrigin(saved || '') ? saved : null;
+})();
+
 const API_CANDIDATES = [
-  localStorage.getItem('authenx_api_base'),
+  ORIGIN_CANDIDATE,
+  SAVED_API_BASE,
   'http://127.0.0.1:3001',
   'http://localhost:3001',
   'http://127.0.0.1:3002',
@@ -200,20 +222,34 @@ async function getApiBase() {
   if (apiBasePromise) return apiBasePromise;
 
   apiBasePromise = (async () => {
+    let foundHealthy = false;
+
     for (const base of API_CANDIDATES) {
       try {
-        const r = await fetch(`${base}/health`);
+        const r = await fetch(`${base}/health`, { signal: AbortSignal.timeout(3000) });
         const text = await r.text();
         let data = null;
         try { data = JSON.parse(text); } catch {}
 
         if (r.ok && data && data.status === 'ok') {
+          foundHealthy = true;
           API = base;
           localStorage.setItem('authenx_api_base', API);
           return API;
         }
       } catch {}
     }
+
+    // If all probes fail, keep current origin as best-effort default before trying stale ports.
+    if (ORIGIN_CANDIDATE) {
+      API = ORIGIN_CANDIDATE;
+    }
+
+    // Do not cache a failed discovery result; allow next attempt to retry probes.
+    if (!foundHealthy) {
+      apiBasePromise = null;
+    }
+
     return API;
   })();
 
@@ -261,15 +297,65 @@ async function doLogin() {
   }
 
   try {
-    const apiBase = await getApiBase();
-    const res = await fetch(`${apiBase}/v1/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    const data = await res.json();
+    const preferredApiBase = await getApiBase();
+    const loginBases = [preferredApiBase, ...API_CANDIDATES]
+      .filter((v, i, arr) => v && arr.indexOf(v) === i);
 
-    if (!res.ok) throw new Error(data.error || 'Login failed');
+    let apiBase = preferredApiBase;
+    let data = null;
+    let lastError = null;
+
+    for (const base of loginBases) {
+      try {
+        const res = await fetch(`${base}/v1/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(10000),
+          body: JSON.stringify({ email, password })
+        });
+
+        const raw = await res.text();
+        let parsed = null;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          parsed = null;
+        }
+
+        // Wrong endpoint (404 HTML, proxy error page, etc.) -> try next candidate.
+        if (!parsed) {
+          lastError = new Error(`Backend error at ${base}: HTTP ${res.status}. Response was not JSON.`);
+          continue;
+        }
+
+        // Reachable AuthenX backend but bad credentials: stop retrying and show message.
+        if (!res.ok) {
+          throw new Error(parsed.error || 'Login failed');
+        }
+
+        // Reachable endpoint but not expected AuthenX login payload -> try next candidate.
+        if (!parsed.token) {
+          lastError = new Error(`Backend at ${base} returned unexpected login payload.`);
+          continue;
+        }
+
+        apiBase = base;
+        data = parsed;
+        localStorage.setItem('authenx_api_base', apiBase);
+        break;
+      } catch (e) {
+        if (e && e.name === 'TypeError') {
+          lastError = new Error(`Unable to reach backend at ${base}.`);
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    if (!data) {
+      localStorage.removeItem('authenx_api_base');
+      throw lastError || new Error('Unable to locate a reachable AuthenX backend.');
+    }
 
     localStorage.setItem('ax_token', data.token);
     localStorage.setItem('ax_user', JSON.stringify(data.user || {}));
@@ -292,7 +378,10 @@ async function doLogin() {
 
     window.location.href = 'onboarding.html';
   } catch (err) {
-    showError(err.message || 'Invalid credentials. Please try again.');
+    const message = (err && err.name === 'TypeError')
+      ? `Unable to reach backend at ${API}. Open this portal from the backend URL (for example: http://127.0.0.1:3001/ui/college/index.html) or update localStorage.authenx_api_base.`
+      : (err.message || 'Invalid credentials. Please try again.');
+    showError(message);
     btn.disabled = false;
     btn.innerHTML = 'Sign In to Portal';
   }

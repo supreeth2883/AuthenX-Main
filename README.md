@@ -16,11 +16,20 @@ cd authenx-hsm && node server.js
 cd authenx-node && node src/server.js
 ```
 
-> **Requires Node.js 22+** (uses `node:sqlite` built-in). Zero npm dependencies.
+Or use the PowerShell script: `.\start-backend-stack.ps1`
+
+> **Requires Node.js 22+**. One npm dependency: `pg` (PostgreSQL driver — used for the main AuthenX database, CVR mock ERP, and college DB provisioning).
 
 URLs:
 - Main app + web UI: http://localhost:3000
+- UI files: http://localhost:3000/ui/employer/index.html (and other pages)
 - HSM: http://localhost:9099
+
+---
+
+## ⚠️ Branch Warning (`backend-change`)
+
+`authenx-connector/` was deleted on this branch. **`/v1/verify/live` cannot work for real colleges** — only CVR College (short_code: `CVRH`) has an in-process mock ERP for testing.
 
 ---
 
@@ -113,7 +122,7 @@ All routes under `/v1/`. Requires `Authorization: Bearer <JWT>` on protected rou
 | `/v1/tokens/issue` | POST | Issue credential token → returns AuthenX Code |
 | `/v1/tokens/revoke` | POST | Revoke a token |
 | `/v1/tokens/correct` | POST | Supersede a token with a corrected one |
-| `/v1/tokens/analytics` | GET | Issuance / verification analytics |
+| `/v1/tokens/analytics` | GET | Monthly issuance / verification analytics |
 | `/v1/tokens/:id` | GET | Get token by ID |
 | `/v1/tokens/:id/details` | GET | Get token with full verification history |
 
@@ -121,7 +130,7 @@ All routes under `/v1/`. Requires `Authorization: Bearer <JWT>` on protected rou
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/v1/verify/code` | POST | Decode AuthenX Code (AX1.…) |
+| `/v1/verify/code` | POST | Decode AuthenX Code (AX1.…) — no ERP contact |
 | `/v1/verify/live` | POST | Live verification — re-queries college ERP in real-time |
 | `/v1/verify/bulk` | POST | Verify up to 50 codes in one call |
 
@@ -129,13 +138,14 @@ All routes under `/v1/`. Requires `Authorization: Bearer <JWT>` on protected rou
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/v1/audit` | GET | Verification event log (filterable) |
+| `/v1/audit` | GET | Verification event log (filterable, paginated) |
 | `/v1/audit/stats` | GET | Dashboard statistics |
 | `/v1/audit/export` | GET | Export audit log (CSV or JSON) |
 | `/v1/audit/security` | GET | Security event log |
 | `/v1/security/stats` | GET | Security metrics |
-| `/v1/metrics` | GET | Server metrics + Prometheus format (admin) |
-| `/v1/fraud-alerts` | GET | Fraud detection alerts (admin) |
+| `/v1/metrics` | GET | Server metrics — super_admin only |
+| `/v1/fraud-alerts` | GET | Fraud detection alerts — super_admin only |
+| `/v1/connectors/health` | GET | Health status of all registered connectors |
 | `/v1/health/detailed` | GET | Detailed service health |
 | `/health` | GET | Basic health check |
 
@@ -143,11 +153,11 @@ All routes under `/v1/`. Requires `Authorization: Bearer <JWT>` on protected rou
 
 | Route | Method | Description |
 |-------|--------|-------------|
-| `/v1/disclosure-policy` | GET/PUT | Field visibility rules per college |
-| `/v1/connector-config` | GET/PUT | ERP type, field mapping, connector metadata |
-| `/v1/connector/health` | GET | Proxy check of college connector reachability |
+| `/v1/disclosure-policy` | GET / PUT | Field visibility rules (scoped to caller's college) |
+| `/v1/connector-config` | GET / PUT | ERP type, field mapping, connector metadata (scoped to caller's college) |
+| `/v1/connector/health` | GET | Server-side proxy check of college connector reachability |
 | `/v1/connector/verify` | POST | Server-side HMAC-signed connector verify call |
-| `/v1/connectors/health` | GET | Health status of all registered connectors |
+| `/v1/connector/rotate-key` | POST | Rotate college Ed25519 keypair via HSM |
 
 ### Privacy & DPDP Compliance
 
@@ -171,17 +181,22 @@ All routes under `/v1/`. Requires `Authorization: Bearer <JWT>` on protected rou
 | `AES_KEY_HEX` | — | persisted to `aes_key.json` | AES key for AuthenX Code encryption |
 | `PORT` | — | 3000 | Main server port |
 | `HSM_PORT` | — | 9099 | HSM service port |
-| `DB_PATH` | — | `./authenx.db` | SQLite database path |
+| `AUTHENX_PG_HOST` | — | localhost | Main DB PostgreSQL host |
+| `AUTHENX_PG_PORT` | — | 5432 | Main DB PostgreSQL port |
+| `AUTHENX_PG_USER` | — | postgres | Main DB PostgreSQL user |
+| `AUTHENX_PG_PASSWORD` | ✅ prod | — | Main DB PostgreSQL password |
+| `AUTHENX_PG_DATABASE` | — | postgres | Main DB PostgreSQL database name |
 | `CORS_ALLOWED_ORIGINS` | — | localhost:3000,localhost:8080 | Comma-separated allowed origins |
 | `LOG_LEVEL` | — | info | debug / info / warn / error |
 | `PG_PROVISION_HOST` | — | — | PostgreSQL host for college DB auto-provisioning |
-| `PG_PROVISION_PORT` | — | 5432 | PostgreSQL port |
-| `PG_PROVISION_USER` | — | postgres | PostgreSQL admin user |
-| `PG_PROVISION_PASSWORD` | — | — | PostgreSQL admin password |
+| `PG_PROVISION_PORT` | — | 5432 | PostgreSQL provisioning port |
+| `PG_PROVISION_USER` | — | postgres | PostgreSQL provisioning admin user |
+| `PG_PROVISION_PASSWORD` | — | — | PostgreSQL provisioning admin password |
+| `CVR_ERP_PG_DB` | — | postgres | PostgreSQL database for CVR mock ERP |
 
 ---
 
-## Database Tables
+## Database Tables (18)
 
 | Table | Purpose |
 |-------|---------|
@@ -191,6 +206,7 @@ All routes under `/v1/`. Requires `Authorization: Bearer <JWT>` on protected rou
 | `college_connector_configs` | ERP type, field mapping, onboarding state |
 | `users` | User accounts: super_admin / college_admin / employer |
 | `verification_tokens` | Issued credential tokens (hash + signature only — no personal data) |
+| `issued_authenx_codes` | Encrypted AuthenX codes stored for student code re-fetch |
 | `verification_requests` | Immutable audit trail of every verification attempt |
 | `revocation_events` | Immutable revocation log |
 | `disclosure_policies` | Field visibility rules per college |
@@ -219,8 +235,8 @@ All routes under `/v1/`. Requires `Authorization: Bearer <JWT>` on protected rou
 | SQL injection | Parameterized queries only; UUID format validation |
 | CORS | Origin allowlist enforced — no wildcard |
 | Replay attacks | Per-request nonce + live Ed25519 signature |
-| DoS protection | 1MB payload limit; rate limiter (50 req/min/IP); circuit breaker per connector |
-| Fraud detection | Behavioral analysis: rapid-fire, sequential scan, brute force, off-hours |
+| DoS protection | 1MB payload limit; rate limiter (50 req/min/IP inline; 200/min/IP via middleware; 30/min/user verify; 20/min/college issue); circuit breaker per connector |
+| Fraud detection | Behavioral analysis: rapid-fire, sequential scan, brute force, off-hours, geo-anomaly |
 | Compliance | India DPDP Act 2023 — consent, DSAR, erasure, retention |
 
 See [SECURITY_FIXES.md](SECURITY_FIXES.md) for the full security reference and production deployment checklist.
@@ -246,3 +262,4 @@ See [SECURITY_FIXES.md](SECURITY_FIXES.md) for the full security reference and p
 | [SECURITY_FIXES.md](SECURITY_FIXES.md) | Security reference, env vars, production deployment checklist |
 | [prd.md](prd.md) | Full product requirements document |
 | [CLAUDE.md](CLAUDE.md) | AI assistant guidance for this codebase |
+| [FLAWS_AND_ISSUES.md](FLAWS_AND_ISSUES.md) | Known problems and technical debt |
