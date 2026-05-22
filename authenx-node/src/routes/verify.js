@@ -9,11 +9,7 @@ const { verifyLimiter }  = require('../middleware/rate-limiter.js');
 const { callWithBreaker, getBreakerState } = require('../middleware/circuit-breaker.js');
 const { signRequest } = require('../middleware/hmac-auth.js');
 const verificationCache  = require('../cache/verification-cache.js');
-const cvrErp = require('../mock-erp/cvr-erp.js');
-
-function isCvrCollege(collegeId, collegeShortCode) {
-  return collegeId === cvrErp.CVR_COLLEGE_ID || collegeShortCode === cvrErp.CVR_SHORT_CODE;
-}
+const { lookupStudent: lookupCentralStudent } = require('../db/students.js');
 
 /**
  * POST /v1/verify/code
@@ -407,35 +403,39 @@ async function mockConnectorVerify({ student_ref_token, nonce }, ctx = {}) {
     'stu_ref_005': { name: 'DEEPA MENON',   degree: 'MBA',   branch: 'FINANCE',           credential_type: 'DEGREE_CERTIFICATE', cgpa: '8.7', graduation_year: '2023', issue_date: '2023-12-01', schema_version: '1.0' },
   };
 
-  const isCvr = isCvrCollege(collegeId);
   let student = null;
   let source = 'mock_memory';
   let sourceTable = 'verify.js:MOCK_STUDENTS';
 
-  if (isCvr) {
+  if (collegeId) {
     try {
-      const cvrStudent = await cvrErp.lookupStudent(student_ref_token);
-      if (cvrStudent) {
+      const centralStudent = await lookupCentralStudent(collegeId, student_ref_token);
+      if (centralStudent) {
+        console.log(`[verify] data source for ${student_ref_token}: central_postgres.erp.students`);
         student = {
-          name: cvrStudent.name,
-          degree: cvrStudent.degree,
-          branch: cvrStudent.branch,
-          credential_type: cvrStudent.credential_type,
-          cgpa: cvrStudent.cgpa,
-          graduation_year: cvrStudent.graduation_year,
-          issue_date: cvrStudent.issue_date,
+          name: centralStudent.full_name,
+          degree: centralStudent.degree,
+          branch: centralStudent.dept_name,
+          credential_type: centralStudent.credential_type || 'DEGREE_CERTIFICATE',
+          cgpa: String(centralStudent.cgpa),
+          graduation_year: centralStudent.grad_year,
+          issue_date: centralStudent.issue_date,
           schema_version: '1.0',
         };
-        source = 'mock_erp_postgres';
-        sourceTable = 'cvr_mock_erp_students';
+        source = 'central_postgres_erp_students';
+        sourceTable = 'erp.students';
       }
-    } catch {
+    } catch (err) {
       // If PostgreSQL is unavailable, fall back to in-memory mock data.
+      console.log(`[verify] central postgres unavailable for ${student_ref_token}; falling back to hardcoded mock data (${err.message})`);
     }
   }
 
   if (!student) {
     student = MOCK_STUDENTS[student_ref_token];
+    if (student) {
+      console.log(`[verify] data source for ${student_ref_token}: verify.js hardcoded MOCK_STUDENTS`);
+    }
   }
 
   if (!student) throw new Error(`Student not found in mock ERP: ${student_ref_token}`);

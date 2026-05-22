@@ -5,6 +5,8 @@
  */
 
 const SQL_SCHEMA = `
+  CREATE SCHEMA IF NOT EXISTS erp;
+
   CREATE TABLE IF NOT EXISTS colleges (
     id             TEXT PRIMARY KEY,
     name           TEXT NOT NULL,
@@ -26,16 +28,23 @@ const SQL_SCHEMA = `
     created_at      TEXT NOT NULL DEFAULT NOW()
   );
 
-  -- PostgreSQL provisioning metadata per college
-  CREATE TABLE IF NOT EXISTS college_postgres_provisioning (
-    college_id       TEXT PRIMARY KEY REFERENCES colleges(id),
-    db_name          TEXT NOT NULL,
-    db_user          TEXT NOT NULL,
-    db_password_enc  TEXT NOT NULL,
-    provisioned      INTEGER NOT NULL DEFAULT 0,
-    provisioned_at   TEXT,
-    created_at       TEXT NOT NULL DEFAULT NOW()
+  -- Shared ERP student registry for all colleges in the central PostgreSQL DB
+  CREATE TABLE IF NOT EXISTS erp.students (
+    college_id      TEXT NOT NULL REFERENCES public.colleges(id),
+    student_id      TEXT NOT NULL,
+    full_name       TEXT,
+    dept_name       TEXT,
+    degree          TEXT,
+    issue_date      TEXT,
+    credential_type TEXT,
+    cgpa            NUMERIC,
+    grad_year       TEXT,
+    student_status  TEXT,
+    PRIMARY KEY (college_id, student_id)
   );
+
+  CREATE INDEX IF NOT EXISTS idx_students_college_id ON erp.students(college_id);
+  CREATE INDEX IF NOT EXISTS idx_students_lookup ON erp.students(college_id, student_id);
 
   CREATE TABLE IF NOT EXISTS users (
     id          TEXT PRIMARY KEY,

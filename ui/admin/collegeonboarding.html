@@ -113,9 +113,41 @@
   .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .hidden { display: none !important; }
+
+  /* Login gate */
+  .auth-shell { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .auth-card { width: 100%; max-width: 420px; background: #fff; border: 1px solid var(--ax-border); border-radius: 12px; padding: 28px; box-shadow: 0 8px 28px rgba(26,31,54,0.12); }
+  .auth-title { font-size: 22px; font-weight: 800; color: var(--ax-primary); margin-bottom: 4px; }
+  .auth-sub { color: var(--ax-muted); font-size: 13px; margin-bottom: 18px; }
+  .auth-error { display: none; margin-bottom: 14px; padding: 10px 12px; border-radius: 8px; border: 1px solid #f5a9b8; background: #ffe0e6; color: #c0132e; font-size: 13px; }
+  .auth-btn { width: 100%; justify-content: center; }
 </style>
 </head>
 <body>
+
+<div id="auth-shell" class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-title">AuthenX Admin Login</div>
+    <div class="auth-sub">Sign in with a valid super admin account to access college onboarding.</div>
+    <div id="auth-error" class="auth-error"></div>
+    <form id="auth-form" autocomplete="off">
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="auth-email" name="auth_email_input" value="" autocomplete="off" autocapitalize="off" spellcheck="false" required />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="auth-password" name="auth_password_input" placeholder="Enter password" autocomplete="new-password" required />
+      </div>
+      <button type="submit" class="btn btn-primary auth-btn" id="auth-submit-btn">
+        <span id="auth-submit-text">Login</span>
+        <span id="auth-submit-spinner" class="spinner hidden"></span>
+      </button>
+    </form>
+  </div>
+</div>
+
+<div id="app-shell" class="hidden">
 
 <div class="header">
   <div class="logo">Authen<span>X</span></div>
@@ -407,6 +439,7 @@
   </div>
 
 </div><!-- /container -->
+</div><!-- /app-shell -->
 
 <script src="../shared/offline-auth.js"></script>
 <script>
@@ -479,7 +512,7 @@ async function loginAcrossCandidates(email, password) {
       if (r.ok && data.token) {
         API = base;
         localStorage.setItem('authenx_api_base', API);
-        return { ok: true, token: data.token };
+        return { ok: true, token: data.token, user: data.user || null };
       }
 
       if (data && data.error) lastError = data.error;
@@ -491,45 +524,78 @@ async function loginAcrossCandidates(email, password) {
   return { ok: false, error: lastError };
 }
 
-// If no valid token exists, prompt for login and obtain a real JWT from the backend.
-// Falls back to offline token only if the backend is unreachable (for local UI preview).
-async function ensureAuth() {
+function showAuthError(message) {
+  const err = document.getElementById('auth-error');
+  err.textContent = message;
+  err.style.display = 'block';
+}
+
+function clearAuthError() {
+  const err = document.getElementById('auth-error');
+  err.style.display = 'none';
+  err.textContent = '';
+}
+
+async function handleLoginSubmit(e) {
+  e.preventDefault();
+
+  const submitBtn = document.getElementById('auth-submit-btn');
+  const submitText = document.getElementById('auth-submit-text');
+  const submitSpinner = document.getElementById('auth-submit-spinner');
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+
+  clearAuthError();
+  submitBtn.disabled = true;
+  submitText.textContent = 'Logging in...';
+  submitSpinner.classList.remove('hidden');
+
   await detectApiBase();
-
-  // If a token exists, validate it against backend first.
-  if (jwt) {
-    try {
-      const r = await fetch(`${API}/v1/colleges`, {
-        headers: { 'Authorization': `Bearer ${jwt}` },
-      });
-      if (r.ok) return;
-      clearAuthSession();
-    } catch {
-      clearAuthSession();
-    }
-  }
-
-  // Try to fetch credentials from the user
-  const email    = prompt('AuthenX Admin Login\n\nEmail:', 'admin@authenx.in');
-  if (!email) return;
-  const password = prompt('Password:', '');
-  if (!password) return;
 
   try {
     const result = await loginAcrossCandidates(email, password);
     if (!result.ok) {
-      alert('Login failed: ' + (result.error || 'Invalid credentials'));
+      showAuthError(result.error || 'Invalid credentials');
       return;
     }
+
+    const role = result.user && result.user.role;
+    if (role && role !== 'super_admin') {
+      clearAuthSession();
+      showAuthError('Only super_admin can access college onboarding.');
+      return;
+    }
+
     jwt = result.token;
     localStorage.setItem('authenx_token', jwt);
+
+    document.getElementById('auth-shell').classList.add('hidden');
+    document.getElementById('app-shell').classList.remove('hidden');
+    window.scrollTo(0, 0);
   } catch {
-    alert(`Unable to reach AuthenX backend at ${API}. Please start backend stack and reload.`);
+    showAuthError(`Unable to reach AuthenX backend at ${API}. Start backend stack and try again.`);
+  } finally {
+    submitBtn.disabled = false;
+    submitText.textContent = 'Login';
+    submitSpinner.classList.add('hidden');
   }
 }
 
-// Trigger auth check on page load (non-blocking)
-ensureAuth();
+function initAuthGate() {
+  clearAuthSession();
+  const emailInput = document.getElementById('auth-email');
+  const passwordInput = document.getElementById('auth-password');
+  emailInput.value = '';
+  passwordInput.value = '';
+  // Clear any browser-restored values after initial paint as well.
+  setTimeout(() => {
+    emailInput.value = '';
+    passwordInput.value = '';
+  }, 0);
+  document.getElementById('auth-form').addEventListener('submit', handleLoginSubmit);
+}
+
+initAuthGate();
 
 // ─── Step navigation ──────────────────────────────────────────────────────────
 function goToStep(n) {
@@ -615,7 +681,7 @@ async function testConnection() {
 
     // Try to call the actual connector if URL is set
     const connUrl = val('connector_url');
-    if (connUrl && connUrl !== 'http://localhost:9000') {
+    if (connUrl && connUrl !== 'http://localhost:9000' && connUrl !== 'http://127.0.0.1:9000') {
       const r = await fetch(`${connUrl}/health`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
       if (r && r.ok) {
         const data = await r.json();
@@ -715,7 +781,12 @@ function showError(msg) {
 // ─── Save college ──────────────────────────────────────────────────────────────
 async function saveCollege() {
   await detectApiBase();
-  if (!jwt) await ensureAuth();
+  if (!jwt) {
+    showError('Please login as super_admin before registering a college.');
+    document.getElementById('app-shell').classList.add('hidden');
+    document.getElementById('auth-shell').classList.remove('hidden');
+    return;
+  }
 
   const btn  = document.getElementById('save-btn');
   const txt  = document.getElementById('save-btn-text');
@@ -739,14 +810,15 @@ async function saveCollege() {
     const data = await r.json();
     if (r.status === 401 && /JWT|Authorization|signature|expired/i.test(data.error || '')) {
       clearAuthSession();
-      await ensureAuth();
-      throw new Error('Session expired/invalid. Please click Register College again.');
+      document.getElementById('app-shell').classList.add('hidden');
+      document.getElementById('auth-shell').classList.remove('hidden');
+      throw new Error('Session expired. Please login again.');
     }
     if (!r.ok) throw new Error(data.error || `Server error (${r.status})`);
     onboardedCollege = data;
     showSuccess(data);
   } catch (e) {
-    showError(e.message || 'Failed to reach the AuthenX server. Make sure it is running on port 3000.');
+    showError(e.message || `Failed to reach the AuthenX server at ${API}.`);
   } finally {
     btn.disabled = false; txt.textContent = '✓ Register College'; spin.classList.add('hidden');
   }

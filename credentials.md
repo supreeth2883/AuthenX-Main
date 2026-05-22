@@ -17,11 +17,23 @@ Verification method: password hash check against PostgreSQL users table using th
 - Status: Working
 - Note: must_change_password = 1 (password change may be enforced after first login)
 
+- Email: iiithadmin@authenx.in
+- Password: IIITHAdmin@123
+- Role: college_admin
+- Status: Working
+- Note: password reset on 2026-04-19, must_change_password = 0
+
 - Email: cvradmin@authenx.in
 - Password: CVRAdmin@123
 - Role: college_admin
 - Status: Working
 - Note: must_change_password = 0
+
+- Email: vnradmin@authenx.in
+- Password: VNRAdmin@123
+- Role: college_admin
+- Status: Working (newly onboarded VNR College)
+- Note: must_change_password = 0 (password manually reset after onboarding)
 
 ## Employer Portal
 - Email: recruiter@infosys.com

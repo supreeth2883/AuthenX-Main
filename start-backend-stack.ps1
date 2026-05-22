@@ -52,6 +52,27 @@ function Test-PortFree {
   return -not (Get-LocalListeningProcessId -Port $Port)
 }
 
+function Test-TcpPortReachable {
+  param(
+    [string]$HostName,
+    [int]$Port,
+    [int]$TimeoutMs = 2000
+  )
+
+  $client = [System.Net.Sockets.TcpClient]::new()
+  try {
+    $connectTask = $client.ConnectAsync($HostName, $Port)
+    if (-not $connectTask.Wait($TimeoutMs)) {
+      return $false
+    }
+    return $client.Connected
+  } catch {
+    return $false
+  } finally {
+    $client.Dispose()
+  }
+}
+
 function Get-HttpJson {
   param(
     [string]$Url,
@@ -162,6 +183,11 @@ if (-not $SkipPostgresValidation) {
   }
 }
 
+$useDemoDb = -not (Test-TcpPortReachable -HostName $PgHost -Port $PgPort)
+if ($useDemoDb) {
+  Write-Warning "PostgreSQL is not reachable at ${PgHost}:${PgPort}. Starting backend in demo mode with an in-memory database."
+}
+
 $pgHostEsc = ConvertTo-SingleQuotedPsString $PgHost
 $pgPortEsc = ConvertTo-SingleQuotedPsString ([string]$PgPort)
 $pgUserEsc = ConvertTo-SingleQuotedPsString $PgUser
@@ -243,16 +269,13 @@ if ($backendNeedsStart) {
   $backendCommand = @"
 `$env:PORT = '$backendPortEsc'
 `$env:HSM_PORT = '$HsmPort'
+`$env:AUTHENX_DEMO_DB = '$(if ($useDemoDb) { '1' } else { '0' })'
 `$env:AUTHENX_PG_HOST = '$pgHostEsc'
 `$env:AUTHENX_PG_PORT = '$pgPortEsc'
 `$env:AUTHENX_PG_USER = '$pgUserEsc'
 `$env:AUTHENX_PG_PASSWORD = '$pgPasswordEsc'
-`$env:AUTHENX_PG_DATABASE = '$pgDatabaseEsc'
-`$env:PG_PROVISION_HOST = '$pgHostEsc'
-`$env:PG_PROVISION_PORT = '$pgPortEsc'
-`$env:PG_PROVISION_USER = '$pgUserEsc'
-`$env:PG_PROVISION_PASSWORD = '$pgPasswordEsc'
-`$env:CVR_ERP_PG_DB = '$pgDatabaseEsc'
+`$env:AUTHENX_PG_DATABASE = 'postgres'
+`$env:CVR_ERP_PG_DB = 'postgres'
 Set-Location '$backendDirEsc'
 Write-Host 'AuthenX backend starting on http://127.0.0.1:$backendPortEsc' -ForegroundColor Yellow
 node src/server.js
@@ -270,42 +293,42 @@ node src/server.js
 }
 
 if (-not $SkipCvrSeed) {
-  Write-Step 'Seeding CVR mock ERP data'
-  Push-Location $backendDir
-  try {
-    $env:PG_PROVISION_HOST = $PgHost
-    $env:PG_PROVISION_PORT = [string]$PgPort
-    $env:PG_PROVISION_USER = $PgUser
-    $env:PG_PROVISION_PASSWORD = $pgPasswordPlain
-    $env:CVR_ERP_PG_DB = $PgDatabase
+  if ($useDemoDb) {
+    Write-Warning 'Skipping CVR mock ERP seed because demo mode uses an in-memory database process that is not shared with separate seed scripts.'
+  } else {
+    Write-Step 'Seeding CVR mock ERP data'
+    Push-Location $backendDir
+    try {
+      $env:CVR_ERP_PG_DB = 'postgres'
 
-    $env:AUTHENX_PG_HOST = $PgHost
-    $env:AUTHENX_PG_PORT = [string]$PgPort
-    $env:AUTHENX_PG_USER = $PgUser
-    $env:AUTHENX_PG_PASSWORD = $pgPasswordPlain
-    $env:AUTHENX_PG_DATABASE = $PgDatabase
+      $env:AUTHENX_PG_HOST = $PgHost
+      $env:AUTHENX_PG_PORT = [string]$PgPort
+      $env:AUTHENX_PG_USER = $PgUser
+      $env:AUTHENX_PG_PASSWORD = $pgPasswordPlain
+      $env:AUTHENX_PG_DATABASE = 'postgres'
 
-    node mock-erp-cvr-seed.js | Out-Host
-    if ($LASTEXITCODE -ne 0) {
-      Write-Warning 'CVR seed script returned a non-zero exit code. Backend is still running; verify PostgreSQL credentials and rerun seed if needed.'
-    } else {
-      Write-Host 'CVR seed completed.' -ForegroundColor Green
+      node mock-erp-cvr-seed.js | Out-Host
+      if ($LASTEXITCODE -ne 0) {
+        Write-Warning 'CVR seed script returned a non-zero exit code. Backend is still running; verify PostgreSQL credentials and rerun seed if needed.'
+      } else {
+        Write-Host 'CVR seed completed.' -ForegroundColor Green
+      }
+    } finally {
+      Pop-Location
     }
-  } finally {
-    Pop-Location
   }
 }
 
 Write-Step 'Done'
 Write-Host "HSM:     http://127.0.0.1:$HsmPort/health" -ForegroundColor Green
 Write-Host "Backend: http://127.0.0.1:$BackendPort/health" -ForegroundColor Green
-Write-Host "Postgres: ${PgHost}:$PgPort (db=$PgDatabase user=$PgUser)" -ForegroundColor Green
-Write-Host 'Backend provisioning env vars were injected into the backend process.' -ForegroundColor Green
+Write-Host "Postgres: ${PgHost}:$PgPort (db=postgres user=$PgUser)" -ForegroundColor Green
+Write-Host 'Shared postgres database env vars were injected into the backend process.' -ForegroundColor Green
 Write-Host ''
 Write-Host 'Usage examples:' -ForegroundColor DarkCyan
 Write-Host '  .\start-backend-stack.ps1'
 Write-Host '  .\start-backend-stack.ps1 -BackendPort 3001'
 Write-Host '  .\start-backend-stack.ps1 -HsmPort 9099 -PgDatabase postgres'
-Write-Host '  .\\start-backend-stack.ps1 -PgPassword (ConvertTo-SecureString "yourPassword" -AsPlainText -Force)'
+Write-Host '  .\start-backend-stack.ps1 -PgPassword (ConvertTo-SecureString "yourPassword" -AsPlainText -Force)'
 Write-Host '  .\start-backend-stack.ps1 -SkipPostgresValidation'
 Write-Host '  .\start-backend-stack.ps1 -SkipCvrSeed'

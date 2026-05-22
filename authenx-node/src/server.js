@@ -7,10 +7,12 @@
 
 const http = require('node:http');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { URL } = require('node:url');
 
 const { run, queryOne, query, initDb } = require('./db/client.js');
-const { hashPassword, generateEd25519KeyPair, signEd25519, verifyEd25519, sha256, buildCanonicalJson, encryptCode } = require('./crypto/index.js');
+const { hashPassword, generateEd25519KeyPair, signEd25519, verifyEd25519, sha256, buildCanonicalJson, encryptCode, decryptSecret } = require('./crypto/index.js');
 
 const { login, refreshAuth, logout, logSecurityEvent, verifyMfaLogin, enrollMfa, confirmMfaSetup, changePassword } = require('./routes/auth.js');
 const { listColleges, getCollege, createCollege, onboardCollege } = require('./routes/colleges.js');
@@ -29,6 +31,7 @@ const fraud = require('./middleware/fraud-detector.js');
 const { privacyNotice, getConsent, grantConsent, deleteConsent, dataAccessRequest, erasureRequest, enforceRetention } = require('./routes/privacy.js');
 
 const PORT = process.env.PORT || 3000;
+const HSM_KEYS_DIR = path.resolve(__dirname, '..', '..', 'authenx-hsm', 'keys');
 
 // ─── Request body parser ──────────────────────────────────────────────────────
 function readBody(req) {
@@ -54,6 +57,38 @@ function readBody(req) {
     });
     req.on('error', reject);
   });
+}
+
+async function ensureHsmKeyFile(college_id) {
+  if (!college_id) return null;
+
+  const hsmKeyPath = path.join(HSM_KEYS_DIR, `${college_id}.json`);
+  if (fs.existsSync(hsmKeyPath)) {
+    return { path: hsmKeyPath, restored: false };
+  }
+
+  const keyRow = await queryOne(
+    'SELECT college_id, public_key_hex, private_key_enc FROM college_keys WHERE college_id = $1',
+    [college_id]
+  );
+  if (!keyRow || !keyRow.public_key_hex || !keyRow.private_key_enc) {
+    return null;
+  }
+
+  if (!fs.existsSync(HSM_KEYS_DIR)) {
+    fs.mkdirSync(HSM_KEYS_DIR, { recursive: true });
+  }
+
+  const privateKeyHex = decryptSecret(keyRow.private_key_enc);
+  fs.writeFileSync(hsmKeyPath, JSON.stringify({
+    college_id: keyRow.college_id,
+    private_key_hex: privateKeyHex,
+    public_key_hex: keyRow.public_key_hex,
+    version: 1,
+    created_at: new Date().toISOString(),
+  }, null, 2));
+  console.log(`HSM key restored from DB: ${college_id}`);
+  return { path: hsmKeyPath, restored: true };
 }
 
 // ─── CORS + Security headers ─────────────────────────────────────────────────
@@ -1129,6 +1164,11 @@ function relTime(ts) {
  */
 async function signViaHsm(college_id, payload) {
   const hsmPort = parseInt(process.env.HSM_PORT || '9099', 10);
+  const restoredPath = await ensureHsmKeyFile(college_id);
+  if (!restoredPath) {
+    throw new Error(`HSM key missing for college ${college_id}`);
+  }
+
   return new Promise((resolve, reject) => {
     const reqBody = JSON.stringify({ college_id, payload });
     const req = require('node:http').request({
@@ -1167,11 +1207,10 @@ async function issueDemoRoute(req, res, body) {
   if (!claims) return;
 
   const {
-    college_id, student_ref_token, name, degree, branch,
-    cgpa, graduation_year, credential_type, issue_date
+    college_id, student_ref_token, degree, credential_type, issue_date
   } = body;
 
-  if (!college_id || !student_ref_token || !name || !degree || !branch || !credential_type) {
+  if (!college_id || !student_ref_token || !degree || !credential_type) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Missing required fields' }));
   }
@@ -1182,11 +1221,24 @@ async function issueDemoRoute(req, res, body) {
     return res.end(JSON.stringify({ error: 'College not found' }));
   }
 
+  const { lookupStudent } = require('./db/students.js');
+  const student = await lookupStudent(college_id, student_ref_token);
+  if (!student) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'Student not found for this college', college_id, student_ref_token }));
+  }
+
   const fields = {
-    schema_version: '1.0', issuer_id: college_id, student_ref_token,
-    name, degree, branch, credential_type,
-    cgpa: cgpa || '', graduation_year: graduation_year || '',
-    issue_date: issue_date || new Date().toISOString().split('T')[0],
+    schema_version: '1.0',
+    issuer_id: college_id,
+    student_ref_token,
+    name: student.full_name,
+    degree,
+    branch: student.dept_name,
+    credential_type,
+    cgpa: student.cgpa != null ? String(student.cgpa) : '',
+    graduation_year: student.grad_year || '',
+    issue_date: student.issue_date || issue_date || new Date().toISOString().split('T')[0],
   };
   const canonical = buildCanonicalJson(fields);
   const canonical_hash = sha256(canonical);
@@ -1325,20 +1377,25 @@ async function main() {
   await initDb();
   await seedDatabase();
 
-  // ── Key sync: load per-college keys from HSM key-store ──────────────────
-  // This ensures the demo issue route can sign with any college's key.
+  // ── Key sync: keep DB college keys and HSM key files aligned ────────────
   try {
-    const _path = require('node:path');
-    const _fs = require('node:fs');
+    const keyRows = await query(
+      'SELECT college_id, public_key_hex, private_key_enc FROM college_keys WHERE college_id IS NOT NULL'
+    );
+    let backfilled = 0;
+    for (const keyRow of keyRows) {
+      const restoreResult = await ensureHsmKeyFile(keyRow.college_id);
+      if (restoreResult?.restored) backfilled++;
+    }
+    if (backfilled > 0) console.log(`  ✓ Backfilled ${backfilled} HSM key files from college_keys`);
 
-    // Method 1: Multi-college key sync from HSM keys directory
-    const hsmKeysDir = _path.join(process.cwd(), '..', 'authenx-hsm', 'keys');
-    if (_fs.existsSync(hsmKeysDir)) {
-      const keyFiles = _fs.readdirSync(hsmKeysDir).filter(f => f.endsWith('.json'));
+    // Method 2: Multi-college key sync from HSM keys directory
+    if (fs.existsSync(HSM_KEYS_DIR)) {
+      const keyFiles = fs.readdirSync(HSM_KEYS_DIR).filter(f => f.endsWith('.json'));
       let synced = 0;
       for (const f of keyFiles) {
         try {
-          const keyData = JSON.parse(_fs.readFileSync(_path.join(hsmKeysDir, f), 'utf8'));
+          const keyData = JSON.parse(fs.readFileSync(path.join(HSM_KEYS_DIR, f), 'utf8'));
           if (keyData.college_id && keyData.public_key_hex) {
             await run('UPDATE colleges SET public_key_hex = $1 WHERE id = $2', [keyData.public_key_hex, keyData.college_id]);
             // Set first key as fallback mock key
@@ -1352,10 +1409,10 @@ async function main() {
       if (synced > 0) console.log(`  ✓ Synced ${synced} college keys from HSM key-store`);
     }
 
-    // Method 2: Legacy single-key fallback (connector_key.json)
-    const keyFile = _path.join(process.cwd(), 'connector_key.json');
-    if (_fs.existsSync(keyFile)) {
-      const keyData = JSON.parse(_fs.readFileSync(keyFile, 'utf8'));
+    // Method 3: Legacy single-key fallback (connector_key.json)
+    const keyFile = path.join(process.cwd(), 'connector_key.json');
+    if (fs.existsSync(keyFile)) {
+      const keyData = JSON.parse(fs.readFileSync(keyFile, 'utf8'));
       if (keyData.privateKeyHex && keyData.publicKeyHex) {
         process.env.MOCK_CONNECTOR_PRIV_KEY = keyData.privateKeyHex;
         console.log('  ✓ Fallback key loaded from connector_key.json');

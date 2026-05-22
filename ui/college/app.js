@@ -51,9 +51,21 @@ const Auth = {
     return c && c.exp > Date.now()/1000;
   },
   logout() {
+    this.clearSession();
+    window.location.href = 'index.html';
+  },
+  clearSession() {
     localStorage.removeItem('ax_token');
     localStorage.removeItem('ax_user');
-    window.location.href = 'index.html';
+    localStorage.removeItem('ax_onboarded');
+  },
+  handleSessionExpiry(message = 'Session expired. Please sign in again.') {
+    this.clearSession();
+    const fromPage = window.location.pathname.split('/').pop() || '';
+    if (fromPage && fromPage !== 'index.html') {
+      const next = encodeURIComponent(fromPage);
+      window.location.href = `index.html?reason=${encodeURIComponent(message)}&next=${next}`;
+    }
   },
   requireAuth() {
     if (!this.isLoggedIn()) { window.location.href = 'index.html'; return false; }
@@ -76,7 +88,15 @@ const API = {
     const res = await fetch(`${API_BASE}${path}`, opts);
     let data;
     try { data = await res.json(); } catch { data = {}; }
-    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    if (!res.ok) {
+      const message = data.error || `HTTP ${res.status}`;
+      if (res.status === 401 && /JWT expired|Invalid JWT signature|Missing or invalid Authorization/i.test(message)) {
+        Auth.handleSessionExpiry(message);
+      }
+      const err = new Error(message);
+      err.status = res.status;
+      throw err;
+    }
     return data;
   },
   get: (path) => API.call('GET', path),

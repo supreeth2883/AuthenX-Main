@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 'use strict';
 /**
- * Seed script for the CVR College mock ERP (PostgreSQL).
- * Safe to run multiple times — student rows use ON CONFLICT DO NOTHING.
+ * Seed script for the CVR College data in the central PostgreSQL erp.students table.
+ * Safe to run multiple times — student rows use ON CONFLICT (college_id, student_id).
  * Also sets a known password for the CVR admin account.
  *
  * PostgreSQL connection uses the same env vars as start-backend-stack.ps1:
- *   PG_PROVISION_HOST     (default: localhost)
- *   PG_PROVISION_PORT     (default: 5432)
- *   PG_PROVISION_USER     (default: postgres)
- *   PG_PROVISION_PASSWORD (default: Postgres@123)
- *   CVR_ERP_PG_DB         (default: postgres)
+ *   AUTHENX_PG_HOST     (default: localhost)
+ *   AUTHENX_PG_PORT     (default: 5432)
+ *   AUTHENX_PG_USER     (default: postgres)
+ *   AUTHENX_PG_PASSWORD (default: Postgres@123)
+ *   AUTHENX_PG_DATABASE (default: postgres)
  *
  * Usage (from authenx-node/ directory):
  *   node mock-erp-cvr-seed.js
@@ -22,15 +22,31 @@
 const { seed } = require('./src/mock-erp/cvr-erp.js');
 const { hashPassword } = require('./src/crypto/index.js');
 const { run, queryOne, initDb } = require('./src/db/client.js');
+const { CVR_COLLEGE_ID } = require('./src/mock-erp/cvr-erp.js');
+const crypto = require('node:crypto');
 
 (async () => {
-  // ── 1. Seed CVR students into PostgreSQL ─────────────────────────────────
-  console.log('CVR Mock ERP (PostgreSQL) — seeding student records…');
-  console.log(`  host: ${process.env.PG_PROVISION_HOST || 'localhost'}:${process.env.PG_PROVISION_PORT || 5432}`);
-  console.log(`  db:   ${process.env.CVR_ERP_PG_DB || 'postgres'}`);
+  // ── 1. Seed CVR students into PostgreSQL erp.students ───────────────────
+  console.log('CVR Central PostgreSQL — seeding student records…');
+  console.log(`  host: ${process.env.AUTHENX_PG_HOST || 'localhost'}:${process.env.AUTHENX_PG_PORT || 5432}`);
+  console.log(`  db:   ${process.env.AUTHENX_PG_DATABASE || 'postgres'}`);
 
   let result;
   try {
+    await initDb();
+    await run(
+      `INSERT INTO public.colleges (id, name, short_code, public_key_hex, connector_url, shared_secret)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        CVR_COLLEGE_ID,
+        'CVR College of Engineering',
+        'CVRH',
+        '',
+        'mock',
+        crypto.randomBytes(32).toString('hex'),
+      ]
+    );
     result = await seed();
   } catch (err) {
     console.error('\nPostgreSQL seed failed:', err.message);
@@ -43,20 +59,21 @@ const { run, queryOne, initDb } = require('./src/db/client.js');
   // Verify by reading back the table
   const { Client } = require('pg');
   const client = new Client({
-    host:     process.env.PG_PROVISION_HOST     || 'localhost',
-    port:     Number(process.env.PG_PROVISION_PORT) || 5432,
-    user:     process.env.PG_PROVISION_USER     || 'postgres',
-    password: process.env.PG_PROVISION_PASSWORD || 'Postgres@123',
-    database: process.env.CVR_ERP_PG_DB         || 'postgres',
+    host:     process.env.AUTHENX_PG_HOST     || 'localhost',
+    port:     Number(process.env.AUTHENX_PG_PORT) || 5432,
+    user:     process.env.AUTHENX_PG_USER     || 'postgres',
+    password: process.env.AUTHENX_PG_PASSWORD || 'Postgres@123',
+    database: process.env.AUTHENX_PG_DATABASE || 'postgres',
     connectionTimeoutMillis: 5000,
   });
   await client.connect();
   const rows = (await client.query(
-    'SELECT student_id, full_name, dept_name, cgpa, grad_year, student_status FROM cvr_mock_erp_students ORDER BY student_id'
+    'SELECT college_id, student_id, full_name, dept_name, degree, issue_date, credential_type, cgpa, grad_year, student_status FROM erp.students WHERE college_id = $1 ORDER BY student_id',
+    [CVR_COLLEGE_ID]
   )).rows;
   await client.end();
 
-  console.log('\nCurrent students in mock ERP:');
+  console.log('\nCurrent students in central postgres.erp.students:');
   console.table(rows);
 
   // ── 2. Set a known password for the CVR admin account (main AuthenX DB) ──

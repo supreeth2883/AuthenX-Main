@@ -10,6 +10,7 @@ const { requireAuth } = require('../middleware/auth.js');
 const { signRequest } = require('../middleware/hmac-auth.js');
 const cvrErp = require('../mock-erp/cvr-erp.js');
 const { CVR_SHORT_CODE } = cvrErp;
+const { lookupStudent: lookupCentralStudent } = require('../db/students.js');
 
 async function getCollegeConnector(claims) {
   if (!claims?.college_id) return null;
@@ -170,19 +171,35 @@ async function connectorVerify(req, res, body) {
  */
 async function serveMockErp(res, college, student_ref_token) {
   try {
-    const student = await cvrErp.lookupStudent(String(student_ref_token));
-    if (!student) {
+    const centralStudent = await lookupCentralStudent(college.id, String(student_ref_token));
+    if (!centralStudent) {
       res.writeHead(404, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({
-        error: `Student not found in mock ERP: ${student_ref_token}`,
+        error: `Student not found in central postgres.erp.students: ${student_ref_token}`,
         student_ref_token,
+        college_id: college.id,
       }));
     }
+
+    const student = {
+      student_ref_token: centralStudent.student_id,
+      name: centralStudent.full_name,
+      degree: centralStudent.degree,
+      branch: centralStudent.dept_name,
+      cgpa: String(centralStudent.cgpa),
+      graduation_year: centralStudent.grad_year,
+      issue_date: centralStudent.issue_date,
+      student_status: centralStudent.student_status,
+      credential_type: centralStudent.credential_type,
+      college_name: college.name || null,
+      source: 'central_postgres_erp_students',
+      source_table: 'erp.students',
+    };
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ...student, college_name: college.name || student.college_name }));
+    return res.end(JSON.stringify(student));
   } catch (err) {
     res.writeHead(500, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Mock ERP lookup failed', detail: err.message }));
+    return res.end(JSON.stringify({ error: 'Central erp.students lookup failed', detail: err.message }));
   }
 }
 

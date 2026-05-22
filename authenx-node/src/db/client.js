@@ -4,26 +4,41 @@
  * Async PostgreSQL pool wrapper using pg
  */
 
-const { Pool } = require('pg');
+const { Pool: PgPool } = require('pg');
+const { newDb } = require('pg-mem');
+
+const useDemoDb = /^(1|true|yes)$/i.test(process.env.AUTHENX_DEMO_DB || '');
+
+let pool;
+
+function createMemoryPool() {
+  const db = newDb({ autoCreateForeignKeyIndices: true });
+  const { Pool } = db.adapters.createPg();
+  return new Pool();
+}
 
 if (process.env.NODE_ENV === 'production' && !process.env.AUTHENX_PG_PASSWORD) {
   throw new Error('AUTHENX_PG_PASSWORD is required in production');
 }
 
-const pool = new Pool({
-  host:     process.env.AUTHENX_PG_HOST     || 'localhost',
-  port:     Number(process.env.AUTHENX_PG_PORT)  || 5432,
-  user:     process.env.AUTHENX_PG_USER     || 'postgres',
-  password: process.env.AUTHENX_PG_PASSWORD || '',
-  database: process.env.AUTHENX_PG_DATABASE || 'authenx',
-  max:      10,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-});
+pool = useDemoDb
+  ? createMemoryPool()
+  : new PgPool({
+      host:     process.env.AUTHENX_PG_HOST     || 'localhost',
+      port:     Number(process.env.AUTHENX_PG_PORT)  || 5432,
+      user:     process.env.AUTHENX_PG_USER     || 'postgres',
+      password: process.env.AUTHENX_PG_PASSWORD || '',
+      database: process.env.AUTHENX_PG_DATABASE || 'postgres',
+      max:      10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000,
+    });
 
-pool.on('error', (err) => {
-  console.error('[db] Unexpected pool error:', err.message);
-});
+if (typeof pool.on === 'function') {
+  pool.on('error', (err) => {
+    console.error('[db] Unexpected pool error:', err.message);
+  });
+}
 
 /** Run a SELECT and return all rows */
 async function query(sql, params = []) {
@@ -73,7 +88,13 @@ async function initDb() {
   const { SQL_SCHEMA } = require('./schema.js');
   const client = await pool.connect();
   try {
-    await client.query(SQL_SCHEMA);
+    const statements = SQL_SCHEMA
+      .split(';')
+      .map((statement) => statement.trim())
+      .filter(Boolean);
+    for (const statement of statements) {
+      await client.query(statement);
+    }
   } finally {
     client.release();
   }

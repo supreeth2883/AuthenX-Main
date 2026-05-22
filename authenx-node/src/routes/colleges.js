@@ -7,7 +7,10 @@ const {
   hashPassword,
   generateTempPassword,
 } = require('../crypto/index.js');
+const { seedDefaultStudentsForCollege } = require('../db/students.js');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 
 /** GET /v1/colleges — list all active colleges */
 async function listColleges(req, res) {
@@ -72,79 +75,6 @@ async function createCollege(req, res, body) {
     college_id: id,
     shared_secret,   // shown only once — college stores this for connector auth
   }));
-}
-
-// ─── PostgreSQL Provisioning ──────────────────────────────────────────────────
-/**
- * Attempt to create a PostgreSQL database + role for the college.
- * Requires PG_PROVISION_HOST (and PG_PROVISION_USER / PG_PROVISION_PASSWORD)
- * env vars to be set.  If pg is not installed or the connection fails,
- * metadata is stored anyway and provisioned=0.
- */
-async function provisionCollegePostgres(college_id, short_code) {
-  // Derive safe DB name / user from short_code
-  const safe      = short_code.toLowerCase().replace(/[^a-z0-9]/g, '_');
-  const db_name   = `authenx_${safe}`;
-  const db_user   = `authenx_${safe}_user`;
-  const db_password     = crypto.randomBytes(20).toString('hex');
-  const db_password_enc = encryptSecret(db_password);
-
-  let provisioned = 0;
-  let provisioned_at = null;
-
-  if (process.env.PG_PROVISION_HOST) {
-    try {
-      const { Client } = require('pg'); // optional dep — OK if missing
-      const admin = new Client({
-        host:     process.env.PG_PROVISION_HOST,
-        port:     Number(process.env.PG_PROVISION_PORT) || 5432,
-        database: 'postgres',
-        user:     process.env.PG_PROVISION_USER     || 'postgres',
-        password: process.env.PG_PROVISION_PASSWORD || '',
-        connectionTimeoutMillis: 5000,
-      });
-      await admin.connect();
-      // Create role first (ignore if exists)
-      await admin.query(
-        `DO $$ BEGIN
-           IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${db_user}') THEN
-             EXECUTE 'CREATE ROLE "${db_user}" LOGIN PASSWORD ''${db_password}''';
-           END IF;
-         END $$`
-      );
-      // Create database (ignore if exists)
-      const dbExists = await admin.query(
-        `SELECT 1 FROM pg_database WHERE datname = '${db_name}'`
-      );
-      if (dbExists.rowCount === 0) {
-        await admin.query(`CREATE DATABASE "${db_name}" OWNER "${db_user}"`);
-      }
-      await admin.query(
-        `GRANT ALL PRIVILEGES ON DATABASE "${db_name}" TO "${db_user}"`
-      );
-      await admin.end();
-      provisioned    = 1;
-      provisioned_at = new Date().toISOString();
-    } catch (err) {
-      // Non-fatal: store metadata, mark not provisioned
-      console.warn('[onboard] PostgreSQL provisioning skipped:', err.message);
-    }
-  }
-
-  await run(
-    `INSERT INTO college_postgres_provisioning
-       (college_id, db_name, db_user, db_password_enc, provisioned, provisioned_at)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (college_id) DO UPDATE SET
-       db_name = EXCLUDED.db_name,
-       db_user = EXCLUDED.db_user,
-       db_password_enc = EXCLUDED.db_password_enc,
-       provisioned = EXCLUDED.provisioned,
-       provisioned_at = EXCLUDED.provisioned_at`,
-    [college_id, db_name, db_user, db_password_enc, provisioned, provisioned_at]
-  );
-
-  return { db_name, db_user, provisioned: !!provisioned };
 }
 
 // ─── POST /v1/colleges/onboard ────────────────────────────────────────────────
@@ -214,7 +144,7 @@ async function onboardCollege(req, res, body) {
   try {
     // ── Persist college ───────────────────────────────────────────────────
     await run(
-      `INSERT INTO colleges
+      `INSERT INTO public.colleges
          (id, name, short_code, admin_email, public_key_hex, connector_url, connector_port, shared_secret)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
       [college_id, name, sc, admin_email.toLowerCase(), publicKeyHex, connector_url, connector_port, shared_secret]
@@ -227,6 +157,23 @@ async function onboardCollege(req, res, body) {
       [college_id, publicKeyHex, private_key_enc]
     );
 
+    try {
+      const hsmKeysDir = path.join(process.cwd(), '..', 'authenx-hsm', 'keys');
+      if (!fs.existsSync(hsmKeysDir)) {
+        fs.mkdirSync(hsmKeysDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(hsmKeysDir, `${college_id}.json`), JSON.stringify({
+        college_id,
+        private_key_hex: privateKeyHex,
+        public_key_hex: publicKeyHex,
+        version: 1,
+        created_at: new Date().toISOString(),
+      }, null, 2));
+      console.log(`HSM key created: ${college_id}`);
+    } catch (keySyncErr) {
+      console.warn('[onboard] HSM key file sync skipped:', keySyncErr.message);
+    }
+
     // ── Persist college admin user ────────────────────────────────────────
     await run(
       `INSERT INTO users (id, email, password_hash, role, college_id, must_change_password)
@@ -234,8 +181,12 @@ async function onboardCollege(req, res, body) {
       [crypto.randomUUID(), admin_email.toLowerCase(), password_hash, 'college_admin', college_id, 1]
     );
 
-    // ── D) PostgreSQL provisioning (non-fatal) ────────────────────────────
-    await provisionCollegePostgres(college_id, sc);
+    // ── D) Seed shared ERP students table (erp.students) in central PostgreSQL ──
+    try {
+      await seedDefaultStudentsForCollege(college_id);
+    } catch (seedErr) {
+      console.warn('[onboard] shared student seed skipped:', seedErr.message);
+    }
 
     // ── E) Connector config metadata ──────────────────────────────────────
     if (connector_config) {
@@ -265,7 +216,7 @@ async function onboardCollege(req, res, body) {
     // Attempt rollback by deleting the partial college record
     try { await run('DELETE FROM college_keys WHERE college_id = $1', [college_id]); } catch {}
     try { await run('DELETE FROM users WHERE college_id = $1', [college_id]); } catch {}
-    try { await run('DELETE FROM colleges WHERE id = $1', [college_id]); } catch {}
+    try { await run('DELETE FROM public.colleges WHERE id = $1', [college_id]); } catch {}
     res.writeHead(500, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Failed to onboard college: ' + err.message }));
   }

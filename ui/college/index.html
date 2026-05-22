@@ -146,8 +146,12 @@ input::placeholder { color: var(--ax-subtle); }
   <div class="demo-hint">
     <strong>Demo Credentials</strong>
     <div class="demo-cred">
-      <span>Super Login (Offline + Online)</span>
-      <span onclick="fillCred('superadmin@authenx.in','1234')" class="demo-fill">Fill</span>
+      <span>College Admin (IITB)</span>
+      <span onclick="fillCred('iitb@authenx.in','College@123')" class="demo-fill">Fill</span>
+    </div>
+    <div class="demo-cred">
+      <span>College Admin (CVR)</span>
+      <span onclick="fillCred('cvradmin@authenx.in','CVRAdmin@123')" class="demo-fill">Fill</span>
     </div>
   </div>
 
@@ -276,6 +280,11 @@ async function doLogin() {
 
   if (!email || !password) {
     showError('Please enter email and password.');
+    return;
+  }
+
+  if (!email.includes('@')) {
+    showError('Use portal account email (for example: iitb@authenx.in). Database login values like postgres/Postgres@123 will not work here.');
     return;
   }
 
