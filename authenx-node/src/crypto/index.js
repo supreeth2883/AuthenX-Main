@@ -250,20 +250,13 @@ function verifyJwt(token) {
   if (parts.length !== 3) throw new Error('Malformed JWT');
   const [header, body, sig] = parts;
   
-  // Decode header to check if this is an unsigned token (alg: 'none') for offline demo mode
-  let headerObj;
-  try {
-    headerObj = JSON.parse(base64urlDecode(header).toString('utf8'));
-  } catch {
-    throw new Error('Invalid JWT header');
-  }
-  
-  // If alg is 'none', skip signature verification (offline/demo mode)
-  if (headerObj.alg !== 'none') {
-    const expected = crypto.createHmac('sha256', JWT_SECRET)
-      .update(`${header}.${body}`)
-      .digest('base64url');
-    if (sig !== expected) throw new Error('Invalid JWT signature');
+  const expected = crypto.createHmac('sha256', JWT_SECRET)
+    .update(`${header}.${body}`)
+    .digest('base64url');
+  const sigBuf = Buffer.from(sig, 'base64url');
+  const expBuf = Buffer.from(expected, 'base64url');
+  if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+    throw new Error('Invalid JWT signature');
   }
   
   const payload = JSON.parse(base64urlDecode(body).toString('utf8'));

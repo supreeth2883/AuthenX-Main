@@ -17,10 +17,16 @@ async function listColleges(req, res) {
   const claims = requireAuth(req, res);
   if (!claims) return;
 
-  const colleges = await query(`
+  const rows = await query(`
     SELECT id, name, short_code, public_key_hex, connector_url, active, created_at
     FROM colleges WHERE active = 1 ORDER BY name
   `);
+
+  // Only expose internal connector_url to admins
+  const colleges = claims.role === 'super_admin'
+    ? rows
+    : rows.map(({ connector_url, ...rest }) => rest);
+
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ colleges }));
 }

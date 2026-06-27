@@ -100,7 +100,8 @@ const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3
 
 function isLocalDevOrigin(origin) {
   if (!origin) return false;
-  if (origin === 'null') return true;
+  // Reject origin "null" — it can be sent by data URIs, sandboxed iframes,
+  // and cross-origin redirects, making it exploitable for CSRF.
   return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 }
 
@@ -483,6 +484,11 @@ async function connectorHealthCheck(req, res) {
 
 // ─── Detailed Health ──────────────────────────────────────────────────────────
 async function detailedHealth(req, res) {
+  const { requireAuth, requireRole } = require('./middleware/auth.js');
+  const claims = requireAuth(req, res);
+  if (!claims) return;
+  if (!requireRole(claims, 'super_admin', res)) return;
+
   const [collegesRow, tokensRow, verifRow, failLoginsRow, secEventsRow] = await Promise.all([
     queryOne('SELECT COUNT(*) as cnt FROM colleges WHERE active=1'),
     queryOne('SELECT COUNT(*) as cnt FROM verification_tokens'),
@@ -803,11 +809,11 @@ tr:hover td{background:#f9fafb}
   <div id="loginError" class="alert alert-error hidden"></div>
   <div class="form-group">
     <label class="form-label">Email address</label>
-    <input class="form-input" id="loginEmail" type="email" value="admin@authenx.in" placeholder="email">
+    <input class="form-input" id="loginEmail" type="email" placeholder="email">
   </div>
   <div class="form-group">
     <label class="form-label">Password</label>
-    <input class="form-input" id="loginPass" type="password" value="Admin@123" placeholder="password">
+    <input class="form-input" id="loginPass" type="password" placeholder="password">
   </div>
   <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="doLogin()">
     Sign in
@@ -1202,13 +1208,20 @@ async function signViaHsm(college_id, payload) {
 }
 
 async function issueDemoRoute(req, res, body) {
-  const { requireAuth } = require('./middleware/auth.js');
+  const { requireAuth, requireRole } = require('./middleware/auth.js');
   const claims = requireAuth(req, res);
   if (!claims) return;
+  if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
 
   const {
     college_id, student_ref_token, degree, credential_type, issue_date
   } = body;
+
+  // college_admin can only issue for their own college
+  if (claims.role === 'college_admin' && claims.college_id !== college_id) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'Cannot issue tokens for another college' }));
+  }
 
   if (!college_id || !student_ref_token || !degree || !credential_type) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
