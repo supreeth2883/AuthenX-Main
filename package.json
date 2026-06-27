@@ -1,0 +1,19 @@
+{
+  "name": "authenx-main",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/unit/*.test.js",
+    "test:crypto": "node --test tests/unit/crypto.test.js",
+    "test:validation": "node --test tests/unit/validation.test.js",
+    "test:hmac": "node --test tests/unit/hmac-auth.test.js",
+    "test:circuit-breaker": "node --test tests/unit/circuit-breaker.test.js",
+    "test:cache": "node --test tests/unit/verification-cache.test.js",
+    "test:fraud": "node --test tests/unit/fraud-detector.test.js",
+    "test:rate-limiter": "node --test tests/unit/rate-limiter.test.js",
+    "test:hsm": "node --test tests/unit/key-store.test.js"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
