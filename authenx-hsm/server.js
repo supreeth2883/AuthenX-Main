@@ -39,7 +39,7 @@ function readBody(req) {
     });
     req.on('end', () => {
       try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
-      catch { reject(new Error('Invalid JSON')); }
+      catch (err) { reject(new Error(`Invalid JSON: ${err.message}`)); }
     });
     req.on('error', reject);
   });

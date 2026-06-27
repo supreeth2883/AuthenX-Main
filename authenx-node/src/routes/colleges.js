@@ -220,9 +220,15 @@ async function onboardCollege(req, res, body) {
   } catch (err) {
     console.error('[onboard] DB error:', err.message);
     // Attempt rollback by deleting the partial college record
-    try { await run('DELETE FROM college_keys WHERE college_id = $1', [college_id]); } catch {}
-    try { await run('DELETE FROM users WHERE college_id = $1', [college_id]); } catch {}
-    try { await run('DELETE FROM public.colleges WHERE id = $1', [college_id]); } catch {}
+    try { await run('DELETE FROM college_keys WHERE college_id = $1', [college_id]); } catch (cleanupErr) {
+      console.warn('[onboard] Rollback: failed to delete college_keys:', cleanupErr.message);
+    }
+    try { await run('DELETE FROM users WHERE college_id = $1', [college_id]); } catch (cleanupErr) {
+      console.warn('[onboard] Rollback: failed to delete users:', cleanupErr.message);
+    }
+    try { await run('DELETE FROM public.colleges WHERE id = $1', [college_id]); } catch (cleanupErr) {
+      console.warn('[onboard] Rollback: failed to delete college:', cleanupErr.message);
+    }
     res.writeHead(500, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Failed to onboard college: ' + err.message }));
   }

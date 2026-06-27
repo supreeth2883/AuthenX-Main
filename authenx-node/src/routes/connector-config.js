@@ -39,8 +39,12 @@ async function getConnectorConfig(req, res) {
 
   let connector_config = null;
   let field_mapping = null;
-  try { connector_config = cfg?.connector_config_json ? JSON.parse(cfg.connector_config_json) : null; } catch {}
-  try { field_mapping = cfg?.field_mapping_json ? JSON.parse(cfg.field_mapping_json) : null; } catch {}
+  try { connector_config = cfg?.connector_config_json ? JSON.parse(cfg.connector_config_json) : null; } catch (err) {
+    console.warn(`[connector-config] Corrupt connector_config_json for college ${collegeId}:`, err.message);
+  }
+  try { field_mapping = cfg?.field_mapping_json ? JSON.parse(cfg.field_mapping_json) : null; } catch (err) {
+    console.warn(`[connector-config] Corrupt field_mapping_json for college ${collegeId}:`, err.message);
+  }
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({

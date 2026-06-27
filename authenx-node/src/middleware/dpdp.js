@@ -14,7 +14,7 @@
  */
 
 const crypto = require('node:crypto');
-const { run, queryOne, query } = require('../db/client.js');
+const { run, queryOne, query, transaction } = require('../db/client.js');
 
 // ─── Consent Management ───────────────────────────────────────────────────────
 
@@ -148,30 +148,32 @@ async function generateDataAccessReport(userId) {
 async function processErasureRequest(userId, reason, ip) {
   const requestId = crypto.randomUUID();
 
-  // Log the erasure request itself (must be kept for compliance)
-  await run(`INSERT INTO erasure_requests (id, user_id, reason, ip_address, status)
-       VALUES ($1, $2, $3, $4, 'processing')`,
-    [requestId, userId, reason, ip]);
+  return transaction(async (db) => {
+    // Log the erasure request itself (must be kept for compliance)
+    await db.run(`INSERT INTO erasure_requests (id, user_id, reason, ip_address, status)
+         VALUES ($1, $2, $3, $4, 'processing')`,
+      [requestId, userId, reason, ip]);
 
-  // Delete user-specific data
-  await run('DELETE FROM mfa_secrets WHERE user_id = $1', [userId]);
-  await run('DELETE FROM mfa_backup_codes WHERE user_id = $1', [userId]);
-  await run('DELETE FROM consent_records WHERE user_id = $1', [userId]);
-  await run('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
+    // Delete user-specific data
+    await db.run('DELETE FROM mfa_secrets WHERE user_id = $1', [userId]);
+    await db.run('DELETE FROM mfa_backup_codes WHERE user_id = $1', [userId]);
+    await db.run('DELETE FROM consent_records WHERE user_id = $1', [userId]);
+    await db.run('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
 
-  // Anonymize security events (keep structure, remove PII)
-  await run(`UPDATE security_events SET actor_email = '[ERASED]', ip_address = '[ERASED]'
-       WHERE actor_id = $1`, [userId]);
+    // Anonymize security events (keep structure, remove PII)
+    await db.run(`UPDATE security_events SET actor_email = '[ERASED]', ip_address = '[ERASED]'
+         WHERE actor_id = $1`, [userId]);
 
-  // Anonymize verification requests
-  await run(`UPDATE verification_requests SET employer_name = '[ERASED]'
-       WHERE employer_name = (SELECT email FROM users WHERE id = $1)`, [userId]);
+    // Anonymize verification requests
+    await db.run(`UPDATE verification_requests SET employer_name = '[ERASED]'
+         WHERE employer_name = (SELECT email FROM users WHERE id = $1)`, [userId]);
 
-  // Mark erasure complete
-  await run(`UPDATE erasure_requests SET status = 'completed', completed_at = NOW()
-       WHERE id = $1`, [requestId]);
+    // Mark erasure complete
+    await db.run(`UPDATE erasure_requests SET status = 'completed', completed_at = NOW()
+         WHERE id = $1`, [requestId]);
 
-  return { request_id: requestId, status: 'completed' };
+    return { request_id: requestId, status: 'completed' };
+  });
 }
 
 // ─── Data Retention Policy ────────────────────────────────────────────────────

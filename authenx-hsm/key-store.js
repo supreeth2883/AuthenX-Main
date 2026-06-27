@@ -42,7 +42,9 @@ const MASTER_KEY = (() => {
         console.warn('WARNING: Using master key from file. Set HSM_MASTER_KEY env var in production.');
         return Buffer.from(data.master_key_hex, 'hex');
       }
-    } catch { /* will generate new */ }
+    } catch (err) {
+      console.warn('[hsm] Failed to read master key file, will generate new:', err.message);
+    }
   }
 
   // In production, fail without master key
@@ -97,7 +99,9 @@ function auditLog(action, college_id, detail = '') {
   };
   try {
     fs.appendFileSync(AUDIT_LOG, JSON.stringify(entry) + '\n');
-  } catch { /* non-fatal */ }
+  } catch (err) {
+    console.error('[hsm] Failed to write audit log entry:', err.message);
+  }
 }
 
 // ─── Key File I/O ─────────────────────────────────────────────────────────────

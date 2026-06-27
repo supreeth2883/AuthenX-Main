@@ -23,7 +23,9 @@ const LOG_DIR    = path.join(process.cwd(), 'logs');
 
 // Ensure log directory exists
 if (!fs.existsSync(LOG_DIR)) {
-  try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch { /* ok */ }
+  try { fs.mkdirSync(LOG_DIR, { recursive: true }); } catch (err) {
+    console.error('[logger] Failed to create log directory:', err.message);
+  }
 }
 
 // ─── Daily log file writer ────────────────────────────────────────────────────
@@ -34,7 +36,9 @@ function getLogStream() {
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   if (today !== currentDate || !logStream) {
     if (logStream) {
-      try { logStream.end(); } catch { /* ok */ }
+      try { logStream.end(); } catch (err) {
+        console.error('[logger] Failed to close previous log stream:', err.message);
+      }
     }
     currentDate = today;
     const logFile = path.join(LOG_DIR, `authenx-${today}.jsonl`);
@@ -63,7 +67,9 @@ function log(level, message, meta = {}) {
   try {
     const stream = getLogStream();
     stream.write(line);
-  } catch { /* non-fatal */ }
+  } catch (err) {
+    console.error('[logger] Failed to write to log file:', err.message);
+  }
 }
 
 // ─── Generate unique IDs ──────────────────────────────────────────────────────
