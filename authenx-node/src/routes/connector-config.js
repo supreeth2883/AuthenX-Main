@@ -1,6 +1,8 @@
 'use strict';
 const { queryOne, run } = require('../db/client.js');
 const { requireAuth, requireRole } = require('../middleware/auth.js');
+const { sendJson, sendError } = require('../utils/json-response.js');
+const { resolveCollegeId } = require('../utils/college-access.js');
 
 /**
  * GET /v1/connector-config
@@ -11,15 +13,11 @@ async function getConnectorConfig(req, res) {
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
 
-  const url = new URL(req.url, 'http://localhost');
-  const requestedCollegeId = url.searchParams.get('college_id');
-  const collegeId = claims.role === 'super_admin'
-    ? (requestedCollegeId || claims.college_id)
-    : claims.college_id;
+  const requestedId = new URL(req.url, 'http://localhost').searchParams.get('college_id');
+  const collegeId = resolveCollegeId(claims, requestedId);
 
   if (!collegeId) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'college_id required' }));
+    return sendError(res, 400, 'college_id required');
   }
 
   const college = await queryOne(
@@ -27,8 +25,7 @@ async function getConnectorConfig(req, res) {
     [collegeId]
   );
   if (!college) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'College not found' }));
+    return sendError(res, 404, 'College not found');
   }
 
   const cfg = await queryOne(
@@ -42,8 +39,7 @@ async function getConnectorConfig(req, res) {
   try { connector_config = cfg?.connector_config_json ? JSON.parse(cfg.connector_config_json) : null; } catch {}
   try { field_mapping = cfg?.field_mapping_json ? JSON.parse(cfg.field_mapping_json) : null; } catch {}
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
+  sendJson(res, 200, {
     college: {
       id: college.id,
       name: college.name,
@@ -55,7 +51,7 @@ async function getConnectorConfig(req, res) {
     connector_config,
     field_mapping,
     updated_at: cfg?.updated_at || null,
-  }));
+  });
 }
 
 /**
@@ -73,19 +69,15 @@ async function saveConnectorConfig(req, res, body) {
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
 
-  const collegeId = claims.role === 'super_admin'
-    ? (body.college_id || claims.college_id)
-    : claims.college_id;
+  const collegeId = resolveCollegeId(claims, body.college_id);
 
   if (!collegeId) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'college_id required' }));
+    return sendError(res, 400, 'college_id required');
   }
 
   const college = await queryOne('SELECT id FROM colleges WHERE id = $1 AND active = 1', [collegeId]);
   if (!college) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'College not found' }));
+    return sendError(res, 404, 'College not found');
   }
 
   const onboarding_completed = body.onboarding_completed ? 1 : 0;
@@ -115,8 +107,7 @@ async function saveConnectorConfig(req, res, body) {
     await run('UPDATE colleges SET connector_url = $1 WHERE id = $2', [connector_url, collegeId]);
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ message: 'Connector config saved', college_id: collegeId, onboarding_completed }));
+  sendJson(res, 200, { message: 'Connector config saved', college_id: collegeId, onboarding_completed });
 }
 
 module.exports = { getConnectorConfig, saveConnectorConfig };

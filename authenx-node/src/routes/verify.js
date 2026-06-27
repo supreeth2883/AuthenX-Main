@@ -10,6 +10,9 @@ const { callWithBreaker, getBreakerState } = require('../middleware/circuit-brea
 const { signRequest } = require('../middleware/hmac-auth.js');
 const verificationCache  = require('../cache/verification-cache.js');
 const { lookupStudent: lookupCentralStudent } = require('../db/students.js');
+const { makeJsonRequest } = require('../utils/http-client.js');
+const { sendJson, sendError } = require('../utils/json-response.js');
+const { isMockConnectorUrl } = require('../utils/mock-connector.js');
 
 /**
  * POST /v1/verify/code
@@ -22,16 +25,14 @@ async function decodeCode(req, res, body) {
 
   const { authenx_code } = body;
   if (!authenx_code) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'authenx_code is required' }));
+    return sendError(res, 400, 'authenx_code is required');
   }
 
   let payload;
   try {
     payload = decryptCode(authenx_code);
   } catch (err) {
-    res.writeHead(422, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Invalid or tampered AuthenX Code', detail: err.message }));
+    return sendError(res, 422, 'Invalid or tampered AuthenX Code', { detail: err.message });
   }
 
   const token = await queryOne(`
@@ -44,8 +45,7 @@ async function decodeCode(req, res, body) {
   `, [payload.token_id]);
 
   if (!token) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Token not found in AuthenX registry' }));
+    return sendError(res, 404, 'Token not found in AuthenX registry');
   }
 
   // Log the decode event
@@ -59,8 +59,7 @@ async function decodeCode(req, res, body) {
   // Include circuit breaker state for this college
   const breakerState = getBreakerState(token.college_id);
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
+  sendJson(res, 200, {
     step: 'code_decoded',
     token_id: token.id,
     college: token.college_name,
@@ -75,7 +74,7 @@ async function decodeCode(req, res, body) {
     revoked_at: token.revoked_at || null,
     connector_status: breakerState.state === 'OPEN' ? 'degraded' : 'online',
     note: 'Run /v1/verify/live to confirm directly from the college ERP',
-  }));
+  });
 }
 
 /**
@@ -97,8 +96,7 @@ async function liveVerify(req, res, body) {
   const { authenx_code, force_live_data } = body || {};
   const forceLiveData = force_live_data === true;
   if (!authenx_code) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'authenx_code is required' }));
+    return sendError(res, 400, 'authenx_code is required');
   }
 
   // Step 1: Decode code
@@ -106,8 +104,7 @@ async function liveVerify(req, res, body) {
   try {
     codePayload = decryptCode(authenx_code);
   } catch (err) {
-    res.writeHead(422, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Invalid AuthenX Code' }));
+    return sendError(res, 422, 'Invalid AuthenX Code');
   }
 
   // Step 2: Fetch token and college info
@@ -118,8 +115,7 @@ async function liveVerify(req, res, body) {
   `, [codePayload.token_id]);
 
   if (!token) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Token not found' }));
+    return sendError(res, 404, 'Token not found');
   }
 
   // Fast path: revoked tokens don't need live connector check
@@ -130,21 +126,19 @@ async function liveVerify(req, res, body) {
          VALUES ($1, $2, $3, 'live_verify', 'revoked', $4)`,
       [crypto.randomUUID(), token.id, claims.email, latency]);
 
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
+    return sendJson(res, 200, {
       result: 'revoked',
       college: token.college_name,
       reason: token.revocation_reason,
       revoked_at: token.revoked_at,
       latency_ms: latency,
-    }));
+    });
   }
 
   // Cache check — avoid hitting connector for recent identical verifications
   const cached = verificationCache.get(token.id);
   if (cached && !forceLiveData) {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ...cached, latency_ms: Date.now() - start }));
+    return sendJson(res, 200, { ...cached, latency_ms: Date.now() - start });
   }
 
   // Step 3: Call college connector (with circuit breaker)
@@ -175,8 +169,7 @@ async function liveVerify(req, res, body) {
        token.status === 'active' ? 'verified' : 'error',
        isSigValid ? 1 : 0, latency, nonce]);
 
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
+    return sendJson(res, 200, {
       result: token.status === 'active' ? 'fallback_verified' : 'error',
       college: token.college_name,
       hash_match: true,
@@ -189,7 +182,7 @@ async function liveVerify(req, res, body) {
       lookup_path: 'AuthenXCode -> verification_tokens.id -> stored issuance proof',
       note: 'College connector temporarily unavailable. Showing stored credential proof only.',
       connector_error: err.message,
-    }));
+    });
   }
 
   // Step 4: Recompute canonical hash from connector's live response
@@ -266,8 +259,7 @@ async function liveVerify(req, res, body) {
     verificationCache.set(token.id, { ...responseBody, live_data: null });
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(responseBody));
+  sendJson(res, 200, responseBody);
 }
 
 /**
@@ -276,7 +268,7 @@ async function liveVerify(req, res, body) {
  */
 async function callConnector(connectorUrl, payload, collegeId, sharedSecret, collegeShortCode) {
   // Built-in mock connector
-  if (!connectorUrl || connectorUrl === 'mock' || connectorUrl.startsWith('internal://')) {
+  if (isMockConnectorUrl(connectorUrl)) {
     return mockConnectorVerify(payload, { collegeId });
   }
 
@@ -287,40 +279,11 @@ async function callConnector(connectorUrl, payload, collegeId, sharedSecret, col
   const hmacHeaders = signRequest('POST', url.pathname, body, sharedSecret, collegeId);
 
   try {
-    return await new Promise((resolve, reject) => {
-      const mod = url.protocol === 'https:' ? require('node:https') : require('node:http');
-      const reqOpts = {
-        hostname: url.hostname,
-        port:     url.port || (url.protocol === 'https:' ? 443 : 80),
-        path:     url.pathname,
-        method:   'POST',
-        headers:  {
-          'Content-Type':   'application/json',
-          'Content-Length': Buffer.byteLength(body),
-          ...hmacHeaders
-        },
-      };
-
-      const request = mod.request(reqOpts, (response) => {
-        let data = '';
-        response.on('data', chunk => data += chunk);
-        response.on('end', () => {
-          if (response.statusCode === 404) return reject(new Error('Student not found at connector'));
-          if (response.statusCode >= 400) return reject(new Error(`Connector error ${response.statusCode}`));
-          try { resolve(JSON.parse(data)); }
-          catch { reject(new Error('Invalid JSON from connector')); }
-        });
-      });
-
-      request.on('error', reject);
-      request.setTimeout(8000, () => {
-        request.destroy();
-        reject(new Error('Connector request timed out after 8 seconds'));
-      });
-
-      request.write(body);
-      request.end();
-    });
+    const r = await makeJsonRequest('POST', url.toString(), body, hmacHeaders, 8000);
+    if (r.status === 404) throw new Error('Student not found at connector');
+    if (r.status >= 400)  throw new Error(`Connector error ${r.status}`);
+    if (!r.json)          throw new Error('Invalid JSON from connector');
+    return r.json;
   } catch (err) {
     if (isCvrCollege(collegeId, collegeShortCode)) {
       return mockConnectorVerify(payload, { collegeId, fallbackReason: err.message });
@@ -332,62 +295,25 @@ async function callConnector(connectorUrl, payload, collegeId, sharedSecret, col
 async function signWithHsm(collegeId, payload) {
   const hsmPort = parseInt(process.env.HSM_PORT || '9099', 10);
   const body = JSON.stringify({ college_id: collegeId, payload });
-  return new Promise((resolve, reject) => {
-    const request = require('node:http').request({
-      hostname: '127.0.0.1',
-      port: hsmPort,
-      path: '/sign',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': Buffer.byteLength(body),
-      },
-    }, (response) => {
-      let data = '';
-      response.on('data', chunk => data += chunk);
-      response.on('end', () => {
-        try {
-          const parsed = JSON.parse(data || '{}');
-          if (response.statusCode !== 200 || !parsed.signature) {
-            return reject(new Error(parsed.error || `HSM sign failed (${response.statusCode})`));
-          }
-          resolve(Buffer.from(parsed.signature, 'hex').toString('base64'));
-        } catch {
-          reject(new Error('Invalid HSM response'));
-        }
-      });
-    });
-
-    request.on('error', reject);
-    request.setTimeout(5000, () => {
-      request.destroy(new Error('HSM sign timeout'));
-    });
-    request.write(body);
-    request.end();
-  });
+  const r = await makeJsonRequest('POST', `http://127.0.0.1:${hsmPort}/sign`, body, {}, 5000);
+  if (r.status !== 200 || !r.json?.signature) {
+    throw new Error(r.json?.error || `HSM sign failed (${r.status})`);
+  }
+  return Buffer.from(r.json.signature, 'hex').toString('base64');
 }
 
 /** Fetch public key from ledger service (optional, graceful fallback) */
 async function fetchLedgerPublicKey(collegeId) {
-  return new Promise((resolve) => {
-    const req = require('node:http').request({
-      hostname: 'localhost', port: 8080,
-      path:   '/ledger/public-keys/' + encodeURIComponent(collegeId),
-      method: 'GET',
-    }, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        try {
-          if (res.statusCode !== 200) return resolve(null);
-          resolve(JSON.parse(data).public_key_hex);
-        } catch { resolve(null); }
-      });
-    });
-    req.setTimeout(2000, () => { req.destroy(); resolve(null); });
-    req.on('error', () => resolve(null));
-    req.end();
-  });
+  try {
+    const r = await makeJsonRequest(
+      'GET',
+      `http://localhost:8080/ledger/public-keys/${encodeURIComponent(collegeId)}`,
+      null, {}, 2000
+    );
+    return r.status === 200 ? r.json?.public_key_hex || null : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Built-in mock connector for demo/testing */

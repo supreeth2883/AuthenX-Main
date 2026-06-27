@@ -1,6 +1,8 @@
 'use strict';
 const { query } = require('../db/client.js');
 const { requireAuth, requireRole } = require('../middleware/auth.js');
+const { sendJson } = require('../utils/json-response.js');
+const { parsePagination } = require('../utils/pagination.js');
 
 /** GET /v1/audit — immutable audit log of all verification events */
 async function getAuditLog(req, res, urlObj) {
@@ -8,8 +10,7 @@ async function getAuditLog(req, res, urlObj) {
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
 
-  const limit  = parseInt(urlObj.searchParams.get('limit')  || '50', 10);
-  const offset = parseInt(urlObj.searchParams.get('offset') || '0',  10);
+  const { limit, offset } = parsePagination(urlObj);
 
   let rows, totalRow;
   if (claims.role === 'super_admin') {
@@ -44,14 +45,13 @@ async function getAuditLog(req, res, urlObj) {
     totalRow = totals[0];
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
+  sendJson(res, 200, {
     events:  rows,
     count:   rows.length,
     total:   totalRow ? Number(totalRow.cnt) : 0,
     limit,
     offset,
-  }));
+  });
 }
 
 /** GET /v1/audit/stats — dashboard summary counts */
@@ -75,8 +75,7 @@ async function getStats(req, res) {
     verifications_today: Number(tod[0].cnt),
   };
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ stats }));
+  sendJson(res, 200, { stats });
 }
 
 /**

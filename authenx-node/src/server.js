@@ -29,6 +29,10 @@ const { createRequestLogger, log, logStartup } = require('./middleware/logger.js
 const metrics = require('./middleware/metrics.js');
 const fraud = require('./middleware/fraud-detector.js');
 const { privacyNotice, getConsent, grantConsent, deleteConsent, dataAccessRequest, erasureRequest, enforceRetention } = require('./routes/privacy.js');
+const { sendJson, sendError } = require('./utils/json-response.js');
+const { makeJsonRequest } = require('./utils/http-client.js');
+const { isMockConnectorUrl } = require('./utils/mock-connector.js');
+const { parsePagination } = require('./utils/pagination.js');
 
 const PORT = process.env.PORT || 3000;
 const HSM_KEYS_DIR = path.resolve(__dirname, '..', '..', 'authenx-hsm', 'keys');
@@ -164,8 +168,7 @@ async function safeRoute(handler, req, res, ...extra) {
   catch (err) {
     log.error('Route error:', err.message);
     if (!res.headersSent) {
-      res.writeHead(500, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Internal server error' }));
+      sendError(res, 500, 'Internal server error');
     }
   }
 }
@@ -200,8 +203,7 @@ async function router(req, res) {
 
   const ip = req.socket.remoteAddress || 'unknown';
   if (!enforceRateLimit(ip)) {
-    res.writeHead(429, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Too many requests from this IP, please try again later.' }));
+    return sendError(res, 429, 'Too many requests from this IP, please try again later.');
   }
 
   // Static: serve HTML frontend (admin dashboard)
@@ -223,12 +225,10 @@ async function router(req, res) {
     const uiRoot   = _path.resolve(projectRoot, 'ui');
     const resolved = _path.resolve(filePath);
     if (!resolved.startsWith(uiRoot + _path.sep) && resolved !== uiRoot) {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ error: 'Forbidden' }));
+      return sendError(res, 403, 'Forbidden');
     }
     if (!_fs.existsSync(resolved)) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ error: 'File not found', path }));
+      return sendError(res, 404, 'File not found', { path });
     }
     const ext = _path.extname(resolved).toLowerCase();
     const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
@@ -240,16 +240,14 @@ async function router(req, res) {
 
   // Health check
   if (path === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ status: 'ok', version: '1.0.0', node: process.version }));
+    return sendJson(res, 200, { status: 'ok', version: '1.0.0', node: process.version });
   }
 
   let body = {};
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method)) {
     try { body = await readBody(req); body = sanitizeObject(body); }
     catch (err) {
-      res.writeHead(400, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ error: err.message }));
+      return sendError(res, 400, err.message);
     }
   }
 
@@ -329,8 +327,7 @@ async function router(req, res) {
   if (path === '/v1/privacy/retention/enforce' && method === 'POST') return safeRoute(enforceRetention, req, res);
 
   // 404
-  res.writeHead(404, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ error: 'Route not found', path, method }));
+  sendError(res, 404, 'Route not found', { path, method });
 }
 
 // ─── Bulk Verification ────────────────────────────────────────────────────────
@@ -341,12 +338,10 @@ async function bulkVerify(req, res, body) {
 
   const { codes } = body;
   if (!Array.isArray(codes) || codes.length === 0) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'codes array is required' }));
+    return sendError(res, 400, 'codes array is required');
   }
   if (codes.length > 50) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Maximum 50 codes per bulk request' }));
+    return sendError(res, 400, 'Maximum 50 codes per bulk request');
   }
 
   const { decryptCode } = require('./crypto/index.js');
@@ -370,8 +365,7 @@ async function bulkVerify(req, res, body) {
     }
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ results, count: results.length }));
+  sendJson(res, 200, { results, count: results.length });
 }
 
 // ─── Token Analytics ──────────────────────────────────────────────────────────
@@ -385,8 +379,7 @@ async function tokenAnalytics(req, res) {
   const collegeId = claims.college_id;
 
   if (isCollegeAdmin && collegeId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(collegeId)) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Invalid college_id format' }));
+    return sendError(res, 400, 'Invalid college_id format');
   }
 
   const monthly = isCollegeAdmin
@@ -418,8 +411,7 @@ async function tokenAnalytics(req, res) {
     GROUP BY day ORDER BY day DESC LIMIT 30
   `);
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ monthly_issuance: monthly, daily_verifications: verificationTrends }));
+  sendJson(res, 200, { monthly_issuance: monthly, daily_verifications: verificationTrends });
 }
 
 // ─── Security Events Audit ────────────────────────────────────────────────────
@@ -429,8 +421,7 @@ async function getSecurityEvents(req, res, urlObj) {
   if (!claims) return;
   if (!requireRole(claims, ['super_admin'], res)) return;
 
-  const limit = parseInt(urlObj.searchParams.get('limit') || '50', 10);
-  const offset = parseInt(urlObj.searchParams.get('offset') || '0', 10);
+  const { limit, offset } = parsePagination(urlObj);
 
   const events = await query(`
     SELECT * FROM security_events ORDER BY created_at DESC LIMIT $1 OFFSET $2
@@ -438,8 +429,7 @@ async function getSecurityEvents(req, res, urlObj) {
   const totalRow = await queryOne('SELECT COUNT(*) as cnt FROM security_events');
   const total = Number(totalRow?.cnt) || 0;
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ events, count: events.length, total, limit, offset }));
+  sendJson(res, 200, { events, count: events.length, total, limit, offset });
 }
 
 // ─── Connector Health Check ───────────────────────────────────────────────────
@@ -452,33 +442,20 @@ async function connectorHealthCheck(req, res) {
   const results = [];
 
   for (const college of colleges) {
-    if (!college.connector_url || college.connector_url === 'mock' || college.connector_url.startsWith('internal://')) {
+    if (isMockConnectorUrl(college.connector_url)) {
       results.push({ college: college.name, status: 'mock', latency_ms: 0 });
       continue;
     }
     const start = Date.now();
     try {
-      await new Promise((resolve, reject) => {
-        const urlObj = new URL('/health', college.connector_url);
-        const mod = urlObj.protocol === 'https:' ? require('node:https') : require('node:http');
-        const request = mod.request({
-          hostname: urlObj.hostname, port: urlObj.port, path: '/health', method: 'GET',
-        }, (response) => {
-          let d = ''; response.on('data', c => d += c);
-          response.on('end', () => resolve(d));
-        });
-        request.on('error', reject);
-        request.setTimeout(3000, () => { request.destroy(); reject(new Error('timeout')); });
-        request.end();
-      });
+      await makeJsonRequest('GET', new URL('/health', college.connector_url).toString(), null, {}, 3000);
       results.push({ college: college.name, status: 'online', latency_ms: Date.now() - start });
     } catch {
       results.push({ college: college.name, status: 'offline', latency_ms: Date.now() - start });
     }
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ connectors: results, checked_at: new Date().toISOString() }));
+  sendJson(res, 200, { connectors: results, checked_at: new Date().toISOString() });
 }
 
 // ─── Detailed Health ──────────────────────────────────────────────────────────
@@ -509,8 +486,7 @@ async function detailedHealth(req, res) {
     checked_at: new Date().toISOString(),
   };
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(stats));
+  sendJson(res, 200, stats);
 }
 
 // ─── Metrics endpoint (admin only) ────────────────────────────────────────────
@@ -526,8 +502,7 @@ function serveMetrics(req, res, urlObj) {
     return res.end(metrics.getPrometheusText());
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(metrics.getMetrics()));
+  sendJson(res, 200, metrics.getMetrics());
 }
 
 // ─── Fraud alerts endpoint (admin only) ───────────────────────────────────────
@@ -537,8 +512,7 @@ async function serveFraudAlerts(req, res, urlObj) {
   if (!claims) return;
   if (!requireRole(claims, 'super_admin', res)) return;
 
-  const limit = parseInt(urlObj.searchParams.get('limit') || '50', 10);
-  const offset = parseInt(urlObj.searchParams.get('offset') || '0', 10);
+  const { limit, offset } = parsePagination(urlObj);
 
   const [alerts, totalRow] = await Promise.all([
     query('SELECT * FROM fraud_alerts ORDER BY created_at DESC LIMIT $1 OFFSET $2', [limit, offset]),
@@ -546,8 +520,7 @@ async function serveFraudAlerts(req, res, urlObj) {
   ]);
   const total = Number(totalRow?.cnt) || 0;
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ alerts, count: alerts.length, total, limit, offset }));
+  sendJson(res, 200, { alerts, count: alerts.length, total, limit, offset });
 }
 
 // ─── Fraud alert flusher (periodically saves buffered alerts to DB) ───────────
@@ -1211,21 +1184,18 @@ async function issueDemoRoute(req, res, body) {
   } = body;
 
   if (!college_id || !student_ref_token || !degree || !credential_type) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Missing required fields' }));
+    return sendError(res, 400, 'Missing required fields');
   }
 
   const college = await queryOne('SELECT * FROM colleges WHERE id = $1 AND active = 1', [college_id]);
   if (!college) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'College not found' }));
+    return sendError(res, 404, 'College not found');
   }
 
   const { lookupStudent } = require('./db/students.js');
   const student = await lookupStudent(college_id, student_ref_token);
   if (!student) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Student not found for this college', college_id, student_ref_token }));
+    return sendError(res, 404, 'Student not found for this college', { college_id, student_ref_token });
   }
 
   const fields = {
@@ -1248,18 +1218,15 @@ async function issueDemoRoute(req, res, body) {
   try {
     issuance_signature = await signViaHsm(college_id, canonical_hash);
   } catch (err) {
-    res.writeHead(502, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'HSM signing failed — is the HSM service running?', detail: err.message }));
+    return sendError(res, 502, 'HSM signing failed — is the HSM service running?', { detail: err.message });
   }
 
   // Verify the signature immediately to catch key-mismatch early
   const sigOk = verifyEd25519(canonical_hash, issuance_signature, college.public_key_hex);
   if (!sigOk) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
-      error: 'HSM signature does not match college public key — key mismatch detected',
+    return sendError(res, 500, 'HSM signature does not match college public key — key mismatch detected', {
       hint: 'Run node authenx-hsm/server.js and ensure the college public key in the DB matches the HSM key.',
-    }));
+    });
   }
 
   // Proper UPDATE/INSERT — avoids FK cascade issues from INSERT OR REPLACE
@@ -1317,8 +1284,7 @@ async function issueDemoRoute(req, res, body) {
     [token_id, authenx_code]
   );
 
-  res.writeHead(201, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ message: 'Token issued', token_id, canonical_hash, authenx_code }));
+  sendJson(res, 201, { message: 'Token issued', token_id, canonical_hash, authenx_code });
 }
 
 // ─── Startup Config Validation ───────────────────────────────────────────────

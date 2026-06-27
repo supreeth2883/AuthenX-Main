@@ -2,9 +2,10 @@
 const crypto = require('node:crypto');
 const { queryOne, query, run } = require('../db/client.js');
 const { verifyPassword, signJwt, generateRefreshToken, hashRefreshToken, encryptCode, decryptCode, hashPassword } = require('../crypto/index.js');
-const { sanitizeObject, isValidEmail } = require('../middleware/validation.js');
+const { sanitizeObject, isValidEmail, validatePasswordStrength } = require('../middleware/validation.js');
 const { logSecurity } = require('../middleware/logger.js');
 const { generateSecret, verifyTOTP, generateOtpAuthUri, generateBackupCodes } = require('../middleware/totp.js');
+const { sendJson, sendError } = require('../utils/json-response.js');
 
 const MAX_LOGIN_ATTEMPTS = 5;
 const LOCKOUT_MINUTES = 30;
@@ -54,13 +55,11 @@ async function login(req, res, body) {
   const ip = req.socket.remoteAddress || 'unknown';
 
   if (!email || !password) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'email and password are required' }));
+    return sendError(res, 400, 'email and password are required');
   }
 
   if (!isValidEmail(email)) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Invalid email format' }));
+    return sendError(res, 400, 'Invalid email format');
   }
 
   const normalizedEmail = email.toLowerCase().trim();
@@ -69,22 +68,18 @@ async function login(req, res, body) {
   if (await isAccountLocked(normalizedEmail)) {
     logSecurity('account_locked_attempt', { email: normalizedEmail, ip });
     await logSecurityEvent('login_locked', { actorEmail: normalizedEmail, ip, details: `Account locked after ${MAX_LOGIN_ATTEMPTS} failed attempts` });
-    res.writeHead(429, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
-      error: `Account is temporarily locked due to too many failed login attempts. Please try again after ${LOCKOUT_MINUTES} minutes.`,
+    return sendError(res, 429, `Account is temporarily locked due to too many failed login attempts. Please try again after ${LOCKOUT_MINUTES} minutes.`, {
       locked_until: new Date(Date.now() + LOCKOUT_MINUTES * 60 * 1000).toISOString(),
-    }));
+    });
   }
 
   const user = await queryOne('SELECT * FROM users WHERE email = $1', [normalizedEmail]);
   if (!user) {
     await recordLoginAttempt(normalizedEmail, ip, false);
     await logSecurityEvent('login_failed', { actorEmail: normalizedEmail, ip, details: 'User not found' });
-    res.writeHead(401, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
-      error: 'Invalid credentials',
+    return sendError(res, 401, 'Invalid credentials', {
       remaining_attempts: await getRemainingAttempts(normalizedEmail),
-    }));
+    });
   }
 
   const ok = await verifyPassword(password, user.password_hash);
@@ -93,11 +88,9 @@ async function login(req, res, body) {
     const remaining = await getRemainingAttempts(normalizedEmail);
     logSecurity('login_failed', { email: normalizedEmail, ip, remaining });
     await logSecurityEvent('login_failed', { actorId: user.id, actorEmail: normalizedEmail, ip, details: `Invalid password. ${remaining} attempts remaining.` });
-    res.writeHead(401, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
-      error: 'Invalid credentials',
+    return sendError(res, 401, 'Invalid credentials', {
       remaining_attempts: remaining,
-    }));
+    });
   }
 
   // Success — clear lockout window by recording success
@@ -108,8 +101,7 @@ async function login(req, res, body) {
   if (mfa) {
     // Issue a temporary MFA pending token (5 min expiry)
     const mfaToken = signJwt({ user_id: user.id, email: user.email, mfa_pending: true }, 300);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ mfa_required: true, mfa_token: mfaToken }));
+    return sendJson(res, 200, { mfa_required: true, mfa_token: mfaToken });
   }
 
   // Generate short-lived access token (15 min)
@@ -129,14 +121,13 @@ async function login(req, res, body) {
 
   await logSecurityEvent('login_success', { actorId: user.id, actorEmail: normalizedEmail, ip });
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
+  sendJson(res, 200, {
     token,
     refresh_token: rawRefreshToken,
     expires_in: 900, // 15 minutes
     user: { id: user.id, email: user.email, role: user.role, college_id: user.college_id },
     must_change_password: user.must_change_password === 1,
-  }));
+  });
 }
 
 /**
@@ -147,8 +138,7 @@ async function login(req, res, body) {
 async function refreshAuth(req, res, body) {
   const { refresh_token } = body;
   if (!refresh_token) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'refresh_token is required' }));
+    return sendError(res, 400, 'refresh_token is required');
   }
 
   const tokenHash = hashRefreshToken(refresh_token);
@@ -159,14 +149,12 @@ async function refreshAuth(req, res, body) {
   );
 
   if (!record) {
-    res.writeHead(401, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Invalid or expired refresh token' }));
+    return sendError(res, 401, 'Invalid or expired refresh token');
   }
 
   if (new Date(record.expires_at) < new Date()) {
     await run('UPDATE refresh_tokens SET revoked = 1 WHERE id = $1', [record.id]);
-    res.writeHead(401, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Refresh token has expired. Please login again.' }));
+    return sendError(res, 401, 'Refresh token has expired. Please login again.');
   }
 
   // Issue new short-lived access token
@@ -177,8 +165,7 @@ async function refreshAuth(req, res, body) {
     college_id: record.college_id,
   });
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ token, expires_in: 900 }));
+  sendJson(res, 200, { token, expires_in: 900 });
 }
 
 /**
@@ -189,8 +176,7 @@ async function refreshAuth(req, res, body) {
 async function logout(req, res, body) {
   const { refresh_token } = body;
   if (!refresh_token) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'refresh_token is required' }));
+    return sendError(res, 400, 'refresh_token is required');
   }
 
   const tokenHash = hashRefreshToken(refresh_token);
@@ -199,8 +185,7 @@ async function logout(req, res, body) {
   const ip = req.socket.remoteAddress || 'unknown';
   await logSecurityEvent('logout', { ip, details: 'Refresh token revoked' });
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ message: 'Logged out successfully' }));
+  sendJson(res, 200, { message: 'Logged out successfully' });
 }
 
 /**
@@ -218,32 +203,25 @@ async function changePassword(req, res, body) {
   const ip = req.socket.remoteAddress || 'unknown';
 
   if (!current_password || !new_password) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'current_password and new_password are required' }));
+    return sendError(res, 400, 'current_password and new_password are required');
   }
 
-  // Password strength validation
-  if (new_password.length < 12) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Password must be at least 12 characters long' }));
-  }
-  if (!/[A-Z]/.test(new_password) || !/[a-z]/.test(new_password) || !/[0-9]/.test(new_password) || !/[!@#$%^&*(),.?":{}|<>]/.test(new_password)) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Password must contain uppercase, lowercase, number, and special character' }));
+  // Password strength validation (uses shared validatePasswordStrength)
+  const pwErrors = validatePasswordStrength(new_password);
+  if (pwErrors.length) {
+    return sendError(res, 400, pwErrors.join('. '));
   }
 
   const user = await queryOne('SELECT * FROM users WHERE id = $1', [claims.user_id]);
   if (!user) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'User not found' }));
+    return sendError(res, 404, 'User not found');
   }
 
   // Verify current password
   const isValid = await verifyPassword(current_password, user.password_hash);
   if (!isValid) {
     await logSecurityEvent('password_change_failed', { actorId: user.id, actorEmail: user.email, ip, details: 'Invalid current password' });
-    res.writeHead(401, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Current password is incorrect' }));
+    return sendError(res, 401, 'Current password is incorrect');
   }
 
   // Hash and store new password
@@ -256,8 +234,7 @@ async function changePassword(req, res, body) {
 
   await logSecurityEvent('password_changed', { actorId: user.id, actorEmail: user.email, ip });
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ message: 'Password changed successfully. Please login again.' }));
+  sendJson(res, 200, { message: 'Password changed successfully. Please login again.' });
 }
 
 /**
@@ -267,8 +244,7 @@ async function changePassword(req, res, body) {
 async function verifyMfaLogin(req, res, body) {
   const { code, mfa_token } = body;
   if (!code || !mfa_token) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'code and mfa_token are required' }));
+    return sendError(res, 400, 'code and mfa_token are required');
   }
 
   let claims;
@@ -277,16 +253,14 @@ async function verifyMfaLogin(req, res, body) {
     claims = verifyJwt(mfa_token);
     if (!claims.mfa_pending || !claims.user_id) throw new Error('Invalid MFA token');
   } catch (err) {
-    res.writeHead(401, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'MFA token invalid or expired' }));
+    return sendError(res, 401, 'MFA token invalid or expired');
   }
 
   const user = await queryOne('SELECT * FROM users WHERE id = $1', [claims.user_id]);
   const mfa = await queryOne('SELECT * FROM mfa_secrets WHERE user_id = $1 AND enabled = 1', [claims.user_id]);
 
   if (!user || !mfa) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'MFA not configured' }));
+    return sendError(res, 400, 'MFA not configured');
   }
 
   let valid = false;
@@ -308,8 +282,7 @@ async function verifyMfaLogin(req, res, body) {
 
   if (!valid) {
     await logSecurityEvent('mfa_failed', { actorId: user.id, actorEmail: user.email, ip, details: 'Invalid MFA code' });
-    res.writeHead(401, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Invalid MFA code' }));
+    return sendError(res, 401, 'Invalid MFA code');
   }
 
   // Issue real tokens
@@ -328,13 +301,12 @@ async function verifyMfaLogin(req, res, body) {
 
   await logSecurityEvent('login_success_mfa', { actorId: user.id, actorEmail: user.email, ip });
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
+  sendJson(res, 200, {
     token,
     refresh_token: rawRefreshToken,
     expires_in: 900,
     user: { id: user.id, email: user.email, role: user.role, college_id: user.college_id }
-  }));
+  });
 }
 
 /**
@@ -347,8 +319,7 @@ async function enrollMfa(req, res) {
 
   const mfa = await queryOne('SELECT * FROM mfa_secrets WHERE user_id = $1 AND enabled = 1', [claims.user_id]);
   if (mfa) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'MFA already enabled' }));
+    return sendError(res, 400, 'MFA already enabled');
   }
 
   const { secret, base32 } = generateSecret();
@@ -360,8 +331,7 @@ async function enrollMfa(req, res) {
 
   const uri = generateOtpAuthUri(claims.email, base32, 'AuthenX');
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ uri, base32_secret: base32 }));
+  sendJson(res, 200, { uri, base32_secret: base32 });
 }
 
 /**
@@ -374,22 +344,19 @@ async function confirmMfaSetup(req, res, body) {
 
   const { code } = body;
   if (!code) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'code is required' }));
+    return sendError(res, 400, 'code is required');
   }
 
   const mfa = await queryOne('SELECT * FROM mfa_secrets WHERE user_id = $1 AND enabled = 0', [claims.user_id]);
   if (!mfa) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'No pending MFA enrollment found' }));
+    return sendError(res, 400, 'No pending MFA enrollment found');
   }
 
   const payload = decryptCode(mfa.secret_enc);
   const secret = Buffer.from(payload.key, 'base64');
 
   if (!verifyTOTP(code, secret)) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Invalid TOTP code' }));
+    return sendError(res, 400, 'Invalid TOTP code');
   }
 
   await run('UPDATE mfa_secrets SET enabled = 1, verified_at = NOW() WHERE id = $1', [mfa.id]);
@@ -403,8 +370,7 @@ async function confirmMfaSetup(req, res, body) {
 
   await logSecurityEvent('mfa_enrolled', { actorId: claims.user_id, actorEmail: claims.email });
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ message: 'MFA enabled', backup_codes: backupCodes }));
+  sendJson(res, 200, { message: 'MFA enabled', backup_codes: backupCodes });
 }
 
 module.exports = { login, refreshAuth, logout, logSecurityEvent, verifyMfaLogin, enrollMfa, confirmMfaSetup, changePassword };

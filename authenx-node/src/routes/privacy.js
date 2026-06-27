@@ -10,11 +10,11 @@ const {
   generateDataAccessReport, processErasureRequest,
   enforceRetentionPolicy, getPrivacyNotice,
 } = require('../middleware/dpdp.js');
+const { sendJson, sendError } = require('../utils/json-response.js');
 
 /** GET /v1/privacy/notice — public privacy notice */
 function privacyNotice(req, res) {
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(getPrivacyNotice()));
+  sendJson(res, 200, getPrivacyNotice());
 }
 
 /** GET /v1/privacy/consent — view user's consent records */
@@ -23,8 +23,7 @@ async function getConsent(req, res) {
   if (!claims) return;
 
   const consents = await getUserConsents(claims.user_id);
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ consents }));
+  sendJson(res, 200, { consents });
 }
 
 /** POST /v1/privacy/consent — grant consent for a specific purpose */
@@ -34,15 +33,13 @@ async function grantConsent(req, res, body) {
 
   const { purpose, scope } = body;
   if (!purpose) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'purpose is required' }));
+    return sendError(res, 400, 'purpose is required');
   }
 
   const ip = req.socket?.remoteAddress || 'unknown';
   const consentId = await recordConsent(claims.user_id, purpose, scope || 'full', ip);
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ consent_id: consentId, purpose, status: 'granted' }));
+  sendJson(res, 200, { consent_id: consentId, purpose, status: 'granted' });
 }
 
 /** DELETE /v1/privacy/consent — revoke consent for a specific purpose */
@@ -52,17 +49,14 @@ async function deleteConsent(req, res, body) {
 
   const { purpose } = body;
   if (!purpose) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'purpose is required' }));
+    return sendError(res, 400, 'purpose is required');
   }
 
   try {
     await revokeConsent(claims.user_id, purpose);
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ purpose, status: 'revoked' }));
+    sendJson(res, 200, { purpose, status: 'revoked' });
   } catch (err) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: err.message }));
+    sendError(res, 500, err.message);
   }
 }
 
@@ -73,12 +67,10 @@ async function dataAccessRequest(req, res) {
 
   const report = await generateDataAccessReport(claims.user_id);
   if (!report) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'User not found' }));
+    return sendError(res, 404, 'User not found');
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify(report));
+  sendJson(res, 200, report);
 }
 
 /** POST /v1/privacy/erasure — request data erasure (Right to be Forgotten) */
@@ -90,11 +82,10 @@ async function erasureRequest(req, res, body) {
   const ip = req.socket?.remoteAddress || 'unknown';
   const result = await processErasureRequest(claims.user_id, reason || 'User requested', ip);
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
+  sendJson(res, 200, {
     ...result,
     note: 'Your data has been erased. Account credentials remain for access control.',
-  }));
+  });
 }
 
 /** POST /v1/privacy/retention/enforce — admin only, run data retention enforcement */
@@ -103,13 +94,11 @@ async function enforceRetention(req, res) {
   if (!claims) return;
 
   if (claims.role !== 'super_admin') {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Admin access required' }));
+    return sendError(res, 403, 'Admin access required');
   }
 
   const results = await enforceRetentionPolicy();
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ retention_enforcement: results }));
+  sendJson(res, 200, { retention_enforcement: results });
 }
 
 module.exports = {

@@ -1,9 +1,5 @@
 'use strict';
 
-const http = require('node:http');
-const https = require('node:https');
-const { URL } = require('node:url');
-
 const crypto = require('node:crypto');
 const { queryOne, run } = require('../db/client.js');
 const { requireAuth } = require('../middleware/auth.js');
@@ -11,6 +7,9 @@ const { signRequest } = require('../middleware/hmac-auth.js');
 const cvrErp = require('../mock-erp/cvr-erp.js');
 const { CVR_SHORT_CODE } = cvrErp;
 const { lookupStudent: lookupCentralStudent } = require('../db/students.js');
+const { makeJsonRequest } = require('../utils/http-client.js');
+const { sendJson, sendError } = require('../utils/json-response.js');
+const { isMockConnectorUrl } = require('../utils/mock-connector.js');
 
 async function getCollegeConnector(claims) {
   if (!claims?.college_id) return null;
@@ -18,41 +17,6 @@ async function getCollegeConnector(claims) {
     'SELECT id, name, short_code, connector_url, shared_secret FROM colleges WHERE id = $1 AND active = 1',
     [claims.college_id]
   );
-}
-
-function requestJson(method, urlString, bodyString, extraHeaders = {}, timeoutMs = 4000) {
-  return new Promise((resolve, reject) => {
-    const urlObj = new URL(urlString);
-    const mod = urlObj.protocol === 'https:' ? https : http;
-    const headers = {
-      'Accept': 'application/json',
-      ...extraHeaders,
-    };
-    if (bodyString != null) {
-      headers['Content-Type'] = 'application/json';
-      headers['Content-Length'] = Buffer.byteLength(bodyString);
-    }
-
-    const req = mod.request({
-      method,
-      hostname: urlObj.hostname,
-      port: urlObj.port || (urlObj.protocol === 'https:' ? 443 : 80),
-      path: urlObj.pathname + (urlObj.search || ''),
-      headers,
-    }, (res) => {
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        let parsed = null;
-        try { parsed = data ? JSON.parse(data) : {}; } catch {}
-        resolve({ status: res.statusCode || 0, json: parsed, raw: data });
-      });
-    });
-    req.on('error', reject);
-    req.setTimeout(timeoutMs, () => { req.destroy(new Error('timeout')); });
-    if (bodyString != null) req.write(bodyString);
-    req.end();
-  });
 }
 
 /**
@@ -65,34 +29,29 @@ async function connectorHealth(req, res) {
 
   const college = await getCollegeConnector(claims);
   if (!college) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'No college in session' }));
+    return sendError(res, 400, 'No college in session');
   }
 
   const connectorUrl = college.connector_url;
-  if (!connectorUrl || connectorUrl === 'mock' || connectorUrl.startsWith('internal://')) {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
+  if (isMockConnectorUrl(connectorUrl)) {
+    return sendJson(res, 200, {
       status: 'mock',
       college: college.name,
       college_id: college.id,
       connector_url: connectorUrl || null,
-    }));
+    });
   }
 
   try {
     const start = Date.now();
-    const r = await requestJson('GET', new URL('/health', connectorUrl).toString(), null, {}, 3000);
+    const r = await makeJsonRequest('GET', new URL('/health', connectorUrl).toString(), null, {}, 3000);
     const latency_ms = Date.now() - start;
     if (r.status >= 200 && r.status < 300) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ...r.json, connector_url: connectorUrl, latency_ms }));
+      return sendJson(res, 200, { ...r.json, connector_url: connectorUrl, latency_ms });
     }
-    res.writeHead(502, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Connector returned non-200', status: r.status, connector_url: connectorUrl }));
+    return sendError(res, 502, 'Connector returned non-200', { status: r.status, connector_url: connectorUrl });
   } catch (err) {
-    res.writeHead(502, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Connector unreachable', detail: err.message, connector_url: connectorUrl }));
+    return sendError(res, 502, 'Connector unreachable', { detail: err.message, connector_url: connectorUrl });
   }
 }
 
@@ -107,34 +66,27 @@ async function connectorVerify(req, res, body) {
 
   const college = await getCollegeConnector(claims);
   if (!college) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'No college in session' }));
+    return sendError(res, 400, 'No college in session');
   }
 
   const { student_ref_token, nonce } = body || {};
   if (!student_ref_token || !nonce) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'student_ref_token and nonce are required' }));
+    return sendError(res, 400, 'student_ref_token and nonce are required');
   }
 
   const connectorUrl = college.connector_url;
-  const isMockMode = !connectorUrl || connectorUrl === 'mock' || connectorUrl.startsWith('internal://');
+  const isMockMode = isMockConnectorUrl(connectorUrl);
 
   // ── Mock ERP path (no external connector configured) ─────────────────────
   if (isMockMode) {
     if (college.short_code === CVR_SHORT_CODE) {
       return serveMockErp(res, college, student_ref_token);
     }
-    res.writeHead(503, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
-      error: 'No connector configured for this college',
-      college_id: college.id,
-    }));
+    return sendError(res, 503, 'No connector configured for this college', { college_id: college.id });
   }
 
   if (!college.shared_secret) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'College shared_secret missing in DB' }));
+    return sendError(res, 500, 'College shared_secret missing in DB');
   }
 
   const payload = { student_ref_token: String(student_ref_token), nonce: String(nonce) };
@@ -143,26 +95,22 @@ async function connectorVerify(req, res, body) {
 
   try {
     const start = Date.now();
-    const r = await requestJson('POST', new URL('/verify', connectorUrl).toString(), rawBody, headers, 5000);
+    const r = await makeJsonRequest('POST', new URL('/verify', connectorUrl).toString(), rawBody, headers, 5000);
     const latency_ms = Date.now() - start;
     if (r.status >= 200 && r.status < 300) {
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ ...r.json, connector_latency_ms: latency_ms }));
+      return sendJson(res, 200, { ...r.json, connector_latency_ms: latency_ms });
     }
-    res.writeHead(502, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
-      error: 'Connector verify failed',
+    return sendError(res, 502, 'Connector verify failed', {
       status: r.status,
       connector_url: connectorUrl,
       detail: r.json?.error || r.raw || null,
-    }));
+    });
   } catch (err) {
     console.warn(`[connector-proxy] ${college.id} connector unreachable (${err.message})`);
     if (college.short_code === CVR_SHORT_CODE) {
       return serveMockErp(res, college, student_ref_token);
     }
-    res.writeHead(502, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Connector verify unreachable', detail: err.message, connector_url: connectorUrl }));
+    return sendError(res, 502, 'Connector verify unreachable', { detail: err.message, connector_url: connectorUrl });
   }
 }
 
@@ -173,12 +121,10 @@ async function serveMockErp(res, college, student_ref_token) {
   try {
     const centralStudent = await lookupCentralStudent(college.id, String(student_ref_token));
     if (!centralStudent) {
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({
-        error: `Student not found in central postgres.erp.students: ${student_ref_token}`,
+      return sendError(res, 404, `Student not found in central postgres.erp.students: ${student_ref_token}`, {
         student_ref_token,
         college_id: college.id,
-      }));
+      });
     }
 
     const student = {
@@ -195,11 +141,9 @@ async function serveMockErp(res, college, student_ref_token) {
       source: 'central_postgres_erp_students',
       source_table: 'erp.students',
     };
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify(student));
+    return sendJson(res, 200, student);
   } catch (err) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Central erp.students lookup failed', detail: err.message }));
+    return sendError(res, 500, 'Central erp.students lookup failed', { detail: err.message });
   }
 }
 
@@ -213,8 +157,7 @@ async function rotateKey(req, res) {
 
   const college = await getCollegeConnector(claims);
   if (!college) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'No college in session' }));
+    return sendError(res, 400, 'No college in session');
   }
 
   const hsmPort = parseInt(process.env.HSM_PORT || '9099', 10);
@@ -222,24 +165,15 @@ async function rotateKey(req, res) {
 
   let hsmResult;
   try {
-    hsmResult = await requestJson(
-      'POST',
-      `http://127.0.0.1:${hsmPort}/rotate-key`,
-      reqBody,
-      { 'Content-Length': String(Buffer.byteLength(reqBody)) },
-      8000
-    );
+    hsmResult = await makeJsonRequest('POST', `http://127.0.0.1:${hsmPort}/rotate-key`, reqBody, {}, 8000);
   } catch (err) {
-    res.writeHead(502, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'HSM unreachable', detail: err.message }));
+    return sendError(res, 502, 'HSM unreachable', { detail: err.message });
   }
 
   if (hsmResult.status !== 200 || !hsmResult.json?.public_key_hex) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
-      error: 'HSM key rotation failed',
+    return sendError(res, 500, 'HSM key rotation failed', {
       detail: hsmResult.json?.error || `HTTP ${hsmResult.status}`,
-    }));
+    });
   }
 
   const { public_key_hex, version } = hsmResult.json;
@@ -263,8 +197,7 @@ async function rotateKey(req, res) {
     ]
   );
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  return res.end(JSON.stringify({ success: true, public_key_hex, version: version || null }));
+  return sendJson(res, 200, { success: true, public_key_hex, version: version || null });
 }
 
 module.exports = { connectorHealth, connectorVerify, rotateKey };

@@ -2,6 +2,8 @@
 const crypto = require('node:crypto');
 const { query, queryOne, run } = require('../db/client.js');
 const { requireAuth, requireRole } = require('../middleware/auth.js');
+const { sendJson, sendError } = require('../utils/json-response.js');
+const { resolveCollegeId } = require('../utils/college-access.js');
 
 const FIELDS = ['name', 'degree', 'branch', 'cgpa', 'graduation_year', 'issue_date'];
 
@@ -14,13 +16,11 @@ async function getDisclosurePolicy(req, res) {
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
 
-  const collegeId = claims.role === 'super_admin'
-    ? new URL(req.url, 'http://localhost').searchParams.get('college_id') || claims.college_id
-    : claims.college_id;
+  const requestedId = new URL(req.url, 'http://localhost').searchParams.get('college_id');
+  const collegeId = resolveCollegeId(claims, requestedId);
 
   if (!collegeId) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'college_id required' }));
+    return sendError(res, 400, 'college_id required');
   }
 
   const rows = await query(
@@ -39,8 +39,7 @@ async function getDisclosurePolicy(req, res) {
     require_approval: 0
   });
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ college_id: collegeId, policy }));
+  sendJson(res, 200, { college_id: collegeId, policy });
 }
 
 /**
@@ -53,19 +52,15 @@ async function saveDisclosurePolicy(req, res, body) {
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
 
-  const collegeId = claims.role === 'super_admin'
-    ? (body.college_id || claims.college_id)
-    : claims.college_id;
+  const collegeId = resolveCollegeId(claims, body.college_id);
 
   if (!collegeId) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'college_id required' }));
+    return sendError(res, 400, 'college_id required');
   }
 
   const { policy } = body;
   if (!Array.isArray(policy) || policy.length === 0) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'policy array is required' }));
+    return sendError(res, 400, 'policy array is required');
   }
 
   const validVisibilities = ['always_show', 'always_hide', 'admin_decision'];
@@ -90,8 +85,7 @@ async function saveDisclosurePolicy(req, res, body) {
     ]);
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ message: 'Disclosure policy saved', college_id: collegeId }));
+  sendJson(res, 200, { message: 'Disclosure policy saved', college_id: collegeId });
 }
 
 module.exports = { getDisclosurePolicy, saveDisclosurePolicy };

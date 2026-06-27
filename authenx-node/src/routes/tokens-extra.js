@@ -2,6 +2,8 @@
 const crypto = require('node:crypto');
 const { queryOne, query, run, transaction } = require('../db/client.js');
 const { requireAuth, requireRole } = require('../middleware/auth.js');
+const { sendJson, sendError } = require('../utils/json-response.js');
+const { enforceCollegeAccess } = require('../utils/college-access.js');
 
 /**
  * GET /v1/tokens/:id/details
@@ -24,17 +26,12 @@ async function getTokenDetails(req, res, tokenId) {
   `, [tokenId]);
 
   if (!token) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Token not found' }));
+    return sendError(res, 404, 'Token not found');
   }
 
-  if (claims.role === 'college_admin' && claims.college_id !== token.college_id) {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Access denied' }));
-  }
+  if (!enforceCollegeAccess(claims, token.college_id, res)) return;
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ token }));
+  sendJson(res, 200, { token });
 }
 
 /**
@@ -49,8 +46,7 @@ async function correctToken(req, res, body) {
 
   const { token_id, reason } = body;
   if (!token_id || !reason) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'token_id and reason are required' }));
+    return sendError(res, 400, 'token_id and reason are required');
   }
 
   const original = await queryOne(`
@@ -58,18 +54,13 @@ async function correctToken(req, res, body) {
   `, [token_id]);
 
   if (!original) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Token not found' }));
+    return sendError(res, 404, 'Token not found');
   }
 
-  if (claims.role === 'college_admin' && claims.college_id !== original.college_id) {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Access denied' }));
-  }
+  if (!enforceCollegeAccess(claims, original.college_id, res)) return;
 
   if (original.status !== 'active') {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: `Token is ${original.status} — only active tokens can be corrected` }));
+    return sendError(res, 400, `Token is ${original.status} — only active tokens can be corrected`);
   }
 
   const newId = crypto.randomUUID();
@@ -98,17 +89,15 @@ async function correctToken(req, res, body) {
       ]);
     });
   } catch (err) {
-    res.writeHead(500, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Correction failed', detail: err.message }));
+    return sendError(res, 500, 'Correction failed', { detail: err.message });
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
+  sendJson(res, 200, {
     message: 'Correction token created',
     original_token_id: token_id,
     new_token_id: newId,
     reason
-  }));
+  });
 }
 
 module.exports = { getTokenDetails, correctToken };

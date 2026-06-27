@@ -1,6 +1,7 @@
 'use strict';
 const { queryOne } = require('../db/client.js');
 const { requireAuth, requireRole } = require('../middleware/auth.js');
+const { sendJson } = require('../utils/json-response.js');
 
 /**
  * GET /v1/security/stats
@@ -55,8 +56,7 @@ async function getSecurityStats(req, res) {
     : await q(`SELECT COUNT(*) as cnt FROM verification_requests r
          JOIN verification_tokens t ON t.id=r.token_id WHERE t.college_id=$1 AND r.sig_valid=0`, [cid]);
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
+  sendJson(res, 200, {
     stats: {
       total_active:                  Number(activeQ.cnt) || 0,
       verified_24h:                  Number(verified24h.cnt) || 0,
@@ -65,7 +65,7 @@ async function getSecurityStats(req, res) {
       avg_time_to_first_verify_secs: avgRow?.avg_secs ? Number(avgRow.avg_secs) : null,
       sig_failures:                  Number(sigFail.cnt) || 0,
     }
-  }));
+  });
 }
 
 module.exports = { getSecurityStats };

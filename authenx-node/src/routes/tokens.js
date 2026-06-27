@@ -7,6 +7,8 @@ const {
 } = require('../crypto/index.js');
 const verificationCache = require('../cache/verification-cache.js');
 const { issueLimiter } = require('../middleware/rate-limiter.js');
+const { sendJson, sendError } = require('../utils/json-response.js');
+const { enforceCollegeAccess } = require('../utils/college-access.js');
 
 /**
  * POST /v1/tokens/issue
@@ -29,22 +31,17 @@ async function issueToken(req, res, body) {
   const required = { college_id, student_ref_token, credential_type, name, degree, branch, issuance_signature };
   const missing = Object.entries(required).filter(([, v]) => !v).map(([k]) => k);
   if (missing.length) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: `Missing fields: ${missing.join(', ')}` }));
+    return sendError(res, 400, `Missing fields: ${missing.join(', ')}`);
   }
 
   // Fetch college to get public key for signature verification
   const college = await queryOne('SELECT * FROM colleges WHERE id = $1 AND active = 1', [college_id]);
   if (!college) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'College not found or inactive' }));
+    return sendError(res, 404, 'College not found or inactive');
   }
 
   // college_admin can only issue for their own college
-  if (claims.role === 'college_admin' && claims.college_id !== college_id) {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Cannot issue tokens for another college' }));
-  }
+  if (!enforceCollegeAccess(claims, college_id, res)) return;
 
   // Build canonical JSON and hash
   const canonicalFields = {
@@ -58,11 +55,9 @@ async function issueToken(req, res, body) {
   // Verify Ed25519 signature from college connector
   const sigValid = verifyEd25519(canonical_hash, issuance_signature, college.public_key_hex);
   if (!sigValid) {
-    res.writeHead(422, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({
-      error: 'Issuance signature verification failed',
+    return sendError(res, 422, 'Issuance signature verification failed', {
       hint: 'Ensure the college connector signed sha256(canonical_json) with the registered Ed25519 private key'
-    }));
+    });
   }
 
   // Check for duplicate
@@ -71,8 +66,7 @@ async function issueToken(req, res, body) {
     [college_id, student_ref_token]
   );
   if (existing && existing.status === 'active') {
-    res.writeHead(409, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Active token already exists for this student at this college' }));
+    return sendError(res, 409, 'Active token already exists for this student at this college');
   }
 
   // Store — privacy-first: hash + signature only, no raw student data
@@ -118,14 +112,13 @@ async function issueToken(req, res, body) {
     [token_id, authenx_code]
   );
 
-  res.writeHead(201, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({
+  sendJson(res, 201, {
     message: 'Token issued successfully',
     token_id,
     canonical_hash,
     authenx_code,
     note: 'Share authenx_code with the student. AuthenX stores only the hash, never raw data.',
-  }));
+  });
 }
 
 /**
@@ -139,22 +132,16 @@ async function revokeToken(req, res, body) {
 
   const { token_id, reason } = body;
   if (!token_id || !reason) {
-    res.writeHead(400, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'token_id and reason are required' }));
+    return sendError(res, 400, 'token_id and reason are required');
   }
 
   const token = await queryOne('SELECT * FROM verification_tokens WHERE id = $1', [token_id]);
   if (!token) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Token not found' }));
+    return sendError(res, 404, 'Token not found');
   }
-  if (claims.role === 'college_admin' && claims.college_id !== token.college_id) {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Cannot revoke tokens from another college' }));
-  }
+  if (!enforceCollegeAccess(claims, token.college_id, res)) return;
   if (token.status === 'revoked') {
-    res.writeHead(409, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Token is already revoked' }));
+    return sendError(res, 409, 'Token is already revoked');
   }
 
   const now = new Date().toISOString();
@@ -170,8 +157,7 @@ async function revokeToken(req, res, body) {
       [crypto.randomUUID(), claims.user_id, claims.email, token_id, `Reason: ${reason}`]);
   });
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ message: 'Token revoked', token_id, revoked_at: now }));
+  sendJson(res, 200, { message: 'Token revoked', token_id, revoked_at: now });
 }
 
 /** GET /v1/tokens/:id — token status */
@@ -189,12 +175,10 @@ async function getToken(req, res, id) {
   `, [id]);
 
   if (!token) {
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Token not found' }));
+    return sendError(res, 404, 'Token not found');
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ token }));
+  sendJson(res, 200, { token });
 }
 
 /** GET /v1/tokens — list tokens (filtered by college for college_admin) */
@@ -220,8 +204,7 @@ async function listTokens(req, res) {
     `, [claims.college_id]);
   }
 
-  res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ tokens: rows, count: rows.length }));
+  sendJson(res, 200, { tokens: rows, count: rows.length });
 }
 
 module.exports = { issueToken, revokeToken, getToken, listTokens };
