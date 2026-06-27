@@ -5,116 +5,136 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>AuthenX — College Admin Login</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap');
-* { box-sizing: border-box; margin: 0; padding: 0; }
 body {
-  font-family: 'Inter', -apple-system, sans-serif;
-  background-color: #020617;
-  background-image: 
-    radial-gradient(circle at 15% 50%, rgba(29, 78, 216, 0.15), transparent 25%),
-    radial-gradient(circle at 85% 30%, rgba(16, 185, 129, 0.15), transparent 25%);
+  background:
+    radial-gradient(circle at 15% 10%, rgba(84, 105, 212, 0.12), transparent 28%),
+    radial-gradient(circle at 85% 20%, rgba(13, 185, 104, 0.09), transparent 26%),
+    var(--ax-bg);
   min-height: 100vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
+}
+
+.login-wrap {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
 }
 
 .login-container {
-  background: rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 20px;
-  padding: 48px;
-  width: 440px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.05);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  width: min(520px, 100%);
+  background: var(--ax-card);
+  border: 1px solid var(--ax-border);
+  border-radius: var(--ax-radius-lg);
+  box-shadow: 0 12px 30px rgba(26, 31, 54, 0.08), 0 2px 8px rgba(26, 31, 54, 0.05);
+  padding: 32px;
 }
 
-.logo-area { text-align: center; margin-bottom: 36px; }
+.logo-area { text-align: center; margin-bottom: 28px; }
 
 .logo-mark {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 56px; height: 56px;
-  background: linear-gradient(135deg, #3b82f6 0%, rgba(16,185,129,0.8) 100%);
-  border-radius: 16px;
-  color: white; font-weight: 800; font-size: 20px;
-  margin-bottom: 16px;
-  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
+  width: 52px; height: 52px;
+  background: linear-gradient(135deg, var(--ax-accent) 0%, #6b7deb 100%);
+  border-radius: 12px;
+  color: #fff; font-weight: 800; font-size: 18px;
+  margin-bottom: 12px;
+  box-shadow: 0 6px 16px rgba(84, 105, 212, 0.28);
 }
 
-.logo-area h1 { font-family: 'Outfit', sans-serif; font-size: 26px; font-weight: 700; color: white; letter-spacing: -0.5px; }
-.logo-area p  { font-size: 14px; color: #94a3b8; margin-top: 6px; }
+.logo-area h1 { font-family: 'Outfit', sans-serif; font-size: 24px; font-weight: 800; color: var(--ax-text); letter-spacing: -0.4px; }
+.logo-area p  { font-size: 13px; color: var(--ax-muted); margin-top: 4px; }
 
 .portal-badge {
   display: inline-block;
-  background: rgba(59, 130, 246, 0.15);
-  color: #60a5fa;
+  background: var(--ax-sky);
+  color: var(--ax-accent);
   font-size: 11px; font-weight: 600;
   padding: 4px 12px; border-radius: 999px;
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  margin-top: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+  border: 1px solid rgba(84,105,212,0.25);
+  margin-top: 10px; text-transform: uppercase; letter-spacing: 0.5px;
 }
 
-.divider { border: none; border-top: 1px solid rgba(255,255,255,0.1); margin: 24px 0; }
+.divider { border: none; border-top: 1px solid var(--ax-border); margin: 20px 0; }
 
-.form-group { margin-bottom: 20px; }
-label { display: block; font-size: 13px; font-weight: 600; color: #cbd5e1; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+.form-group { margin-bottom: 16px; }
+label { display: block; font-size: 12px; font-weight: 700; color: var(--ax-muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.7px; }
 
 input {
-  width: 100%; padding: 14px 16px;
-  background: rgba(0, 0, 0, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 12px;
-  font-size: 15px; color: white;
-  transition: all 0.2s ease;
+  width: 100%;
+  padding: 11px 13px;
+  background: #fff;
+  border: 1.5px solid var(--ax-border);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--ax-text);
+  transition: border-color .15s ease, box-shadow .15s ease;
   font-family: inherit;
 }
-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,0.15); background: rgba(0,0,0,0.4); }
-input::placeholder { color: #64748b; }
+input:focus { outline: none; border-color: var(--ax-accent); box-shadow: 0 0 0 3px rgba(84,105,212,.12); }
+input::placeholder { color: var(--ax-subtle); }
 
 .demo-hint {
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 12px; padding: 16px;
-  margin-bottom: 24px; font-size: 13px; color: #94a3b8;
+  background: #f9fbff;
+  border: 1px solid var(--ax-border);
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  color: var(--ax-muted);
 }
-.demo-hint strong { color: white; display: block; margin-bottom: 8px;}
-.demo-cred { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+.demo-hint strong { color: var(--ax-text); display: block; margin-bottom: 6px; }
+.demo-cred { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--ax-border); }
 .demo-cred:last-child { border-bottom: none; }
+.demo-fill { cursor:pointer; color:var(--ax-accent); font-weight:600; }
 
 .btn-login {
-  width: 100%; padding: 14px;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  color: white; border: 1px solid rgba(255,255,255,0.1); border-radius: 12px;
-  font-size: 15px; font-weight: 600; cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  display: flex; align-items: center; justify-content: center; gap: 8px;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+  width: 100%;
+  padding: 11px;
+  background: var(--ax-accent);
+  color: #fff;
+  border: 1px solid var(--ax-accent);
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s ease, box-shadow .15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 1px 4px rgba(84,105,212,0.32);
 }
-.btn-login:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6); filter: brightness(1.1); }
-.btn-login:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+.btn-login:hover { background: var(--ax-accent-h); border-color: var(--ax-accent-h); }
+.btn-login:disabled { opacity: 0.65; cursor: not-allowed; box-shadow: none; }
 
 .error-box {
-  background: rgba(239, 68, 68, 0.15);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 12px; padding: 12px 16px;
-  color: #f87171; font-size: 13px; font-weight: 500;
+  background: var(--ax-revoked-bg);
+  border: 1px solid #f5a9b8;
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: #c0132e;
+  font-size: 13px;
+  font-weight: 600;
   margin-bottom: 20px; display: none;
 }
 
-.spinner { width:18px; height:18px; border:2px solid rgba(255,255,255,0.2); border-top-color:white; border-radius:50%; animation:spin 0.8s cubic-bezier(0.4, 0, 0.2, 1) infinite; display:inline-block; }
+.spinner { width:16px; height:16px; border:2px solid rgba(255,255,255,0.25); border-top-color:white; border-radius:50%; animation:spin 0.8s linear infinite; display:inline-block; }
 @keyframes spin { to { transform:rotate(360deg); } }
 
-.footer-links { text-align: center; margin-top: 28px; font-size: 13px; color: #94A3B8; }
-.footer-links a { color: #60a5fa; text-decoration: none; font-weight: 500; transition: color 0.2s; }
-.footer-links a:hover { color: white; }
+.footer-links { text-align: center; margin-top: 18px; font-size: 13px; color: var(--ax-muted); }
+.footer-links a { color: var(--ax-accent); text-decoration: none; font-weight: 600; transition: color .15s; }
+.footer-links a:hover { color: var(--ax-accent-h); }
+
+@media (max-width: 560px) {
+  .login-container { padding: 24px 18px; }
+}
 </style>
 </head>
 <body>
+<div class="login-wrap">
 <div class="login-container">
   <div class="logo-area">
     <div class="logo-mark">AX</div>
@@ -126,12 +146,12 @@ input::placeholder { color: #64748b; }
   <div class="demo-hint">
     <strong>Demo Credentials</strong>
     <div class="demo-cred">
-      <span>IIT Bombay Admin</span>
-      <span onclick="fillCred('iitb@authenx.in','College@123')" style="cursor:pointer;color:#3B82F6">Fill ↗</span>
+      <span>College Admin (IITB)</span>
+      <span onclick="fillCred('iitb@authenx.in','College@123')" class="demo-fill">Fill</span>
     </div>
     <div class="demo-cred">
-      <span>Super Admin</span>
-      <span onclick="fillCred('admin@authenx.in','Admin@123')" style="cursor:pointer;color:#3B82F6">Fill ↗</span>
+      <span>College Admin (CVR)</span>
+      <span onclick="fillCred('cvradmin@authenx.in','CVRAdmin@123')" class="demo-fill">Fill</span>
     </div>
   </div>
 
@@ -157,8 +177,89 @@ input::placeholder { color: #64748b; }
     <p>Employer? <a href="../employer/index.html">Go to Verify Portal →</a></p>
   </div>
 </div>
+</div>
 
+<script src="../shared/offline-auth.js"></script>
 <script>
+function isTrustedLocalOrigin(origin) {
+  try {
+    const u = new URL(origin);
+    if (!['http:', 'https:'].includes(u.protocol)) return false;
+    if (u.hostname === 'localhost') return true;
+    if (/^127\.(?:\d{1,3}\.){2}\d{1,3}$/.test(u.hostname)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+const ORIGIN_CANDIDATE = isTrustedLocalOrigin(window.location.origin)
+  ? window.location.origin
+  : null;
+
+const SAVED_API_BASE = (() => {
+  const saved = localStorage.getItem('authenx_api_base');
+  return isTrustedLocalOrigin(saved || '') ? saved : null;
+})();
+
+const API_CANDIDATES = [
+  ORIGIN_CANDIDATE,
+  SAVED_API_BASE,
+  'http://127.0.0.1:3001',
+  'http://localhost:3001',
+  'http://127.0.0.1:3002',
+  'http://localhost:3002',
+  'http://127.0.0.1:3100',
+  'http://localhost:3100',
+  'http://127.0.0.1:3200',
+  'http://localhost:3200',
+  'http://127.0.0.1:3300',
+  'http://localhost:3300',
+  'http://127.0.0.1:3000',
+  'http://localhost:3000',
+].filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+let API = API_CANDIDATES[0] || 'http://127.0.0.1:3001';
+let apiBasePromise = null;
+
+async function getApiBase() {
+  if (apiBasePromise) return apiBasePromise;
+
+  apiBasePromise = (async () => {
+    let foundHealthy = false;
+
+    for (const base of API_CANDIDATES) {
+      try {
+        const r = await fetch(`${base}/health`, { signal: AbortSignal.timeout(3000) });
+        const text = await r.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch {}
+
+        if (r.ok && data && data.status === 'ok') {
+          foundHealthy = true;
+          API = base;
+          localStorage.setItem('authenx_api_base', API);
+          return API;
+        }
+      } catch {}
+    }
+
+    // If all probes fail, keep current origin as best-effort default before trying stale ports.
+    if (ORIGIN_CANDIDATE) {
+      API = ORIGIN_CANDIDATE;
+    }
+
+    // Do not cache a failed discovery result; allow next attempt to retry probes.
+    if (!foundHealthy) {
+      apiBasePromise = null;
+    }
+
+    return API;
+  })();
+
+  return apiBasePromise;
+}
+
 function fillCred(email, pass) {
   document.getElementById('email').value = email;
   document.getElementById('password').value = pass;
@@ -168,19 +269,8 @@ document.getElementById('password').addEventListener('keydown', e => {
   if (e.key === 'Enter') doLogin();
 });
 
-// Auto-redirect if already logged in
-(function() {
-  const t = localStorage.getItem('ax_token');
-  if (t) {
-    try {
-      const c = JSON.parse(atob(t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/')));
-      if (c.exp > Date.now()/1000) {
-        const onboarded = localStorage.getItem('ax_onboarded') === '1';
-        window.location.href = onboarded ? 'dashboard.html' : 'onboarding.html';
-      }
-    } catch {}
-  }
-})();
+// Keep login page visible when opened directly (e.g., Live Preview).
+// Previous behavior auto-redirected immediately if a token existed in localStorage.
 
 async function doLogin() {
   const email    = document.getElementById('email').value.trim();
@@ -193,19 +283,88 @@ async function doLogin() {
     return;
   }
 
+  if (!email.includes('@')) {
+    showError('Use portal account email (for example: iitb@authenx.in). Database login values like postgres/Postgres@123 will not work here.');
+    return;
+  }
+
   btn.disabled = true;
   btn.innerHTML = '<div class="spinner"></div> Signing in...';
   errBox.style.display = 'none';
 
-  try {
-    const res = await fetch('http://localhost:3000/v1/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-    const data = await res.json();
+  const offline = window.AuthenXOfflineAuth?.loginWithSuperCredential(email, password, {
+    role: 'college_admin',
+    collegeId: 'clg_demo_1'
+  });
+  if (offline) {
+    localStorage.setItem('ax_token', offline.token);
+    localStorage.setItem('ax_user', JSON.stringify(offline.user));
+    localStorage.setItem('ax_onboarded', '1');
+    localStorage.setItem('ax_connector_url', 'http://localhost:9001');
+    window.location.href = 'dashboard.html';
+    return;
+  }
 
-    if (!res.ok) throw new Error(data.error || 'Login failed');
+  try {
+    const preferredApiBase = await getApiBase();
+    const loginBases = [preferredApiBase, ...API_CANDIDATES]
+      .filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+    let apiBase = preferredApiBase;
+    let data = null;
+    let lastError = null;
+
+    for (const base of loginBases) {
+      try {
+        const res = await fetch(`${base}/v1/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(10000),
+          body: JSON.stringify({ email, password })
+        });
+
+        const raw = await res.text();
+        let parsed = null;
+        try {
+          parsed = JSON.parse(raw);
+        } catch {
+          parsed = null;
+        }
+
+        // Wrong endpoint (404 HTML, proxy error page, etc.) -> try next candidate.
+        if (!parsed) {
+          lastError = new Error(`Backend error at ${base}: HTTP ${res.status}. Response was not JSON.`);
+          continue;
+        }
+
+        // Reachable AuthenX backend but bad credentials: stop retrying and show message.
+        if (!res.ok) {
+          throw new Error(parsed.error || 'Login failed');
+        }
+
+        // Reachable endpoint but not expected AuthenX login payload -> try next candidate.
+        if (!parsed.token) {
+          lastError = new Error(`Backend at ${base} returned unexpected login payload.`);
+          continue;
+        }
+
+        apiBase = base;
+        data = parsed;
+        localStorage.setItem('authenx_api_base', apiBase);
+        break;
+      } catch (e) {
+        if (e && e.name === 'TypeError') {
+          lastError = new Error(`Unable to reach backend at ${base}.`);
+          continue;
+        }
+        throw e;
+      }
+    }
+
+    if (!data) {
+      localStorage.removeItem('authenx_api_base');
+      throw lastError || new Error('Unable to locate a reachable AuthenX backend.');
+    }
 
     localStorage.setItem('ax_token', data.token);
     localStorage.setItem('ax_user', JSON.stringify(data.user || {}));
@@ -213,7 +372,7 @@ async function doLogin() {
 
     // Check backend: if onboarding is already complete, go straight to dashboard.
     try {
-      const cfgRes = await fetch('http://localhost:3000/v1/connector-config', {
+      const cfgRes = await fetch(`${apiBase}/v1/connector-config`, {
         headers: { 'Authorization': `Bearer ${data.token}`, 'Content-Type': 'application/json' }
       });
       if (cfgRes.ok) {
@@ -228,7 +387,10 @@ async function doLogin() {
 
     window.location.href = 'onboarding.html';
   } catch (err) {
-    showError(err.message || 'Invalid credentials. Please try again.');
+    const message = (err && err.name === 'TypeError')
+      ? `Unable to reach backend at ${API}. Open this portal from the backend URL (for example: http://127.0.0.1:3001/ui/college/index.html) or update localStorage.authenx_api_base.`
+      : (err.message || 'Invalid credentials. Please try again.');
+    showError(message);
     btn.disabled = false;
     btn.innerHTML = 'Sign In to Portal';
   }

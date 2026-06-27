@@ -7,13 +7,15 @@
 
 const http = require('node:http');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
 const { URL } = require('node:url');
 
-const { getDb, run, queryOne, query } = require('./db/client.js');
-const { hashPassword, generateEd25519KeyPair, signEd25519, verifyEd25519, sha256, buildCanonicalJson, encryptCode } = require('./crypto/index.js');
+const { run, queryOne, query, initDb } = require('./db/client.js');
+const { hashPassword, generateEd25519KeyPair, signEd25519, verifyEd25519, sha256, buildCanonicalJson, encryptCode, decryptSecret } = require('./crypto/index.js');
 
 const { login, refreshAuth, logout, logSecurityEvent, verifyMfaLogin, enrollMfa, confirmMfaSetup, changePassword } = require('./routes/auth.js');
-const { listColleges, getCollege, createCollege } = require('./routes/colleges.js');
+const { listColleges, getCollege, createCollege, onboardCollege } = require('./routes/colleges.js');
 const { issueToken, revokeToken, getToken, listTokens } = require('./routes/tokens.js');
 const { decodeCode, liveVerify } = require('./routes/verify.js');
 const { getAuditLog, getStats, exportAuditLog } = require('./routes/audit.js');
@@ -21,7 +23,7 @@ const { getTokenDetails, correctToken } = require('./routes/tokens-extra.js');
 const { getDisclosurePolicy, saveDisclosurePolicy } = require('./routes/disclosure.js');
 const { getSecurityStats } = require('./routes/security.js');
 const { getConnectorConfig, saveConnectorConfig } = require('./routes/connector-config.js');
-const { connectorHealth, connectorVerify } = require('./routes/connector-proxy.js');
+const { connectorHealth, connectorVerify, rotateKey } = require('./routes/connector-proxy.js');
 const { sanitizeObject } = require('./middleware/validation.js');
 const { createRequestLogger, log, logStartup } = require('./middleware/logger.js');
 const metrics = require('./middleware/metrics.js');
@@ -29,6 +31,7 @@ const fraud = require('./middleware/fraud-detector.js');
 const { privacyNotice, getConsent, grantConsent, deleteConsent, dataAccessRequest, erasureRequest, enforceRetention } = require('./routes/privacy.js');
 
 const PORT = process.env.PORT || 3000;
+const HSM_KEYS_DIR = path.resolve(__dirname, '..', '..', 'authenx-hsm', 'keys');
 
 // ─── Request body parser ──────────────────────────────────────────────────────
 function readBody(req) {
@@ -56,6 +59,38 @@ function readBody(req) {
   });
 }
 
+async function ensureHsmKeyFile(college_id) {
+  if (!college_id) return null;
+
+  const hsmKeyPath = path.join(HSM_KEYS_DIR, `${college_id}.json`);
+  if (fs.existsSync(hsmKeyPath)) {
+    return { path: hsmKeyPath, restored: false };
+  }
+
+  const keyRow = await queryOne(
+    'SELECT college_id, public_key_hex, private_key_enc FROM college_keys WHERE college_id = $1',
+    [college_id]
+  );
+  if (!keyRow || !keyRow.public_key_hex || !keyRow.private_key_enc) {
+    return null;
+  }
+
+  if (!fs.existsSync(HSM_KEYS_DIR)) {
+    fs.mkdirSync(HSM_KEYS_DIR, { recursive: true });
+  }
+
+  const privateKeyHex = decryptSecret(keyRow.private_key_enc);
+  fs.writeFileSync(hsmKeyPath, JSON.stringify({
+    college_id: keyRow.college_id,
+    private_key_hex: privateKeyHex,
+    public_key_hex: keyRow.public_key_hex,
+    version: 1,
+    created_at: new Date().toISOString(),
+  }, null, 2));
+  console.log(`HSM key restored from DB: ${college_id}`);
+  return { path: hsmKeyPath, restored: true };
+}
+
 // ─── CORS + Security headers ─────────────────────────────────────────────────
 // Allowed origins - configure via environment variable or use defaults
 const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:8080,http://127.0.0.1:3000')
@@ -65,7 +100,8 @@ const ALLOWED_ORIGINS = (process.env.CORS_ALLOWED_ORIGINS || 'http://localhost:3
 
 function isLocalDevOrigin(origin) {
   if (!origin) return false;
-  if (origin === 'null') return true;
+  // Reject origin "null" — it can be sent by data URIs, sandboxed iframes,
+  // and cross-origin redirects, making it exploitable for CSRF.
   return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
 }
 
@@ -123,6 +159,18 @@ setInterval(() => {
   }
 }, 300000).unref();
 
+// ─── Safe route dispatcher ────────────────────────────────────────────────────
+async function safeRoute(handler, req, res, ...extra) {
+  try { return await handler(req, res, ...extra); }
+  catch (err) {
+    log.error('Route error:', err.message);
+    if (!res.headersSent) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Internal server error' }));
+    }
+  }
+}
+
 // ─── Router ───────────────────────────────────────────────────────────────────
 async function router(req, res) {
   // Generate request correlation ID for distributed tracing
@@ -157,10 +205,38 @@ async function router(req, res) {
     return res.end(JSON.stringify({ error: 'Too many requests from this IP, please try again later.' }));
   }
 
-  // Static: serve HTML frontend
+  // Static: serve HTML frontend (admin dashboard)
   if (path === '/' || path === '/app') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return res.end(HTML_APP);
+  }
+
+  // Static: serve the ui/ directory so browser and API share the same origin
+  // (avoids all CORS null-origin issues when opening HTML files from disk)
+  // Access the employer portal at: http://localhost:3000/ui/employer/index.html
+  if (path.startsWith('/ui/')) {
+    const _fs   = require('node:fs');
+    const _path = require('node:path');
+    // Resolve the file path relative to the project root (two levels up from authenx-node/src/)
+    const projectRoot = _path.resolve(__dirname, '../../');
+    const filePath    = _path.join(projectRoot, path);
+    // Security: block path traversal
+    const uiRoot   = _path.resolve(projectRoot, 'ui');
+    const resolved = _path.resolve(filePath);
+    if (!resolved.startsWith(uiRoot + _path.sep) && resolved !== uiRoot) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'Forbidden' }));
+    }
+    if (!_fs.existsSync(resolved)) {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: 'File not found', path }));
+    }
+    const ext = _path.extname(resolved).toLowerCase();
+    const MIME = { '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
+                   '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
+                   '.jpeg': 'image/jpeg', '.svg': 'image/svg+xml', '.ico': 'image/x-icon' };
+    res.writeHead(200, { 'Content-Type': MIME[ext] || 'text/plain' });
+    return res.end(_fs.readFileSync(resolved));
   }
 
   // Health check
@@ -179,77 +255,79 @@ async function router(req, res) {
   }
 
   // Auth routes
-  if (path === '/v1/auth/login' && method === 'POST') return login(req, res, body);
-  if (path === '/v1/auth/refresh' && method === 'POST') return refreshAuth(req, res, body);
-  if (path === '/v1/auth/logout' && method === 'POST') return logout(req, res, body);
-  if (path === '/v1/auth/change-password' && method === 'POST') return changePassword(req, res, body);
-  if (path === '/v1/auth/mfa/verify' && method === 'POST') return verifyMfaLogin(req, res, body);
-  if (path === '/v1/auth/mfa/enroll' && method === 'POST') return enrollMfa(req, res);
-  if (path === '/v1/auth/mfa/confirm' && method === 'POST') return confirmMfaSetup(req, res, body);
+  if (path === '/v1/auth/login' && method === 'POST') return safeRoute(login, req, res, body);
+  if (path === '/v1/auth/refresh' && method === 'POST') return safeRoute(refreshAuth, req, res, body);
+  if (path === '/v1/auth/logout' && method === 'POST') return safeRoute(logout, req, res, body);
+  if (path === '/v1/auth/change-password' && method === 'POST') return safeRoute(changePassword, req, res, body);
+  if (path === '/v1/auth/mfa/verify' && method === 'POST') return safeRoute(verifyMfaLogin, req, res, body);
+  if (path === '/v1/auth/mfa/enroll' && method === 'POST') return safeRoute(enrollMfa, req, res);
+  if (path === '/v1/auth/mfa/confirm' && method === 'POST') return safeRoute(confirmMfaSetup, req, res, body);
 
   // College routes
-  if (path === '/v1/colleges' && method === 'GET') return listColleges(req, res);
-  if (path === '/v1/colleges' && method === 'POST') return createCollege(req, res, body);
+  if (path === '/v1/colleges' && method === 'GET') return safeRoute(listColleges, req, res);
+  if (path === '/v1/colleges' && method === 'POST') return safeRoute(createCollege, req, res, body);
+  if (path === '/v1/colleges/onboard' && method === 'POST') return safeRoute(onboardCollege, req, res, body);
   const collegeMatch = path.match(/^\/v1\/colleges\/([^/]+)$/);
-  if (collegeMatch && method === 'GET') return getCollege(req, res, collegeMatch[1]);
+  if (collegeMatch && method === 'GET') return safeRoute(getCollege, req, res, collegeMatch[1]);
 
   // Token routes
-  if (path === '/v1/tokens' && method === 'GET') return listTokens(req, res);
-  if (path === '/v1/tokens/issue' && method === 'POST') return issueToken(req, res, body);
-  if (path === '/v1/tokens/revoke' && method === 'POST') return revokeToken(req, res, body);
-  if (path === '/v1/tokens/correct' && method === 'POST') return correctToken(req, res, body);
-  if (path === '/v1/tokens/analytics' && method === 'GET') return tokenAnalytics(req, res);
+  if (path === '/v1/tokens' && method === 'GET') return safeRoute(listTokens, req, res);
+  if (path === '/v1/tokens/issue' && method === 'POST') return safeRoute(issueToken, req, res, body);
+  if (path === '/v1/tokens/revoke' && method === 'POST') return safeRoute(revokeToken, req, res, body);
+  if (path === '/v1/tokens/correct' && method === 'POST') return safeRoute(correctToken, req, res, body);
+  if (path === '/v1/tokens/analytics' && method === 'GET') return safeRoute(tokenAnalytics, req, res);
   const tokenDetailsMatch = path.match(/^\/v1\/tokens\/([^/]+)\/details$/);
-  if (tokenDetailsMatch && method === 'GET') return getTokenDetails(req, res, tokenDetailsMatch[1]);
+  if (tokenDetailsMatch && method === 'GET') return safeRoute(getTokenDetails, req, res, tokenDetailsMatch[1]);
   const tokenMatch = path.match(/^\/v1\/tokens\/([^/]+)$/);
-  if (tokenMatch && method === 'GET') return getToken(req, res, tokenMatch[1]);
+  if (tokenMatch && method === 'GET') return safeRoute(getToken, req, res, tokenMatch[1]);
 
   // Verify routes
-  if (path === '/v1/verify/code' && method === 'POST') return decodeCode(req, res, body);
-  if (path === '/v1/verify/live' && method === 'POST') return liveVerify(req, res, body);
-  if (path === '/v1/verify/bulk' && method === 'POST') return bulkVerify(req, res, body);
+  if (path === '/v1/verify/code' && method === 'POST') return safeRoute(decodeCode, req, res, body);
+  if (path === '/v1/verify/live' && method === 'POST') return safeRoute(liveVerify, req, res, body);
+  if (path === '/v1/verify/bulk' && method === 'POST') return safeRoute(bulkVerify, req, res, body);
 
   // Audit routes
-  if (path === '/v1/audit' && method === 'GET') return getAuditLog(req, res, urlObj);
-  if (path === '/v1/audit/stats' && method === 'GET') return getStats(req, res);
-  if (path === '/v1/audit/export' && method === 'GET') return exportAuditLog(req, res, urlObj);
-  if (path === '/v1/audit/security' && method === 'GET') return getSecurityEvents(req, res, urlObj);
+  if (path === '/v1/audit' && method === 'GET') return safeRoute(getAuditLog, req, res, urlObj);
+  if (path === '/v1/audit/stats' && method === 'GET') return safeRoute(getStats, req, res);
+  if (path === '/v1/audit/export' && method === 'GET') return safeRoute(exportAuditLog, req, res, urlObj);
+  if (path === '/v1/audit/security' && method === 'GET') return safeRoute(getSecurityEvents, req, res, urlObj);
 
   // Disclosure policy routes
-  if (path === '/v1/disclosure-policy' && method === 'GET') return getDisclosurePolicy(req, res);
-  if (path === '/v1/disclosure-policy' && method === 'PUT') return saveDisclosurePolicy(req, res, body);
+  if (path === '/v1/disclosure-policy' && method === 'GET') return safeRoute(getDisclosurePolicy, req, res);
+  if (path === '/v1/disclosure-policy' && method === 'PUT') return safeRoute(saveDisclosurePolicy, req, res, body);
 
   // Connector onboarding config
-  if (path === '/v1/connector-config' && method === 'GET') return getConnectorConfig(req, res);
-  if (path === '/v1/connector-config' && method === 'PUT') return saveConnectorConfig(req, res, body);
+  if (path === '/v1/connector-config' && method === 'GET') return safeRoute(getConnectorConfig, req, res);
+  if (path === '/v1/connector-config' && method === 'PUT') return safeRoute(saveConnectorConfig, req, res, body);
 
   // Connector proxy (server-side HMAC)
-  if (path === '/v1/connector/health' && method === 'GET') return connectorHealth(req, res);
-  if (path === '/v1/connector/verify' && method === 'POST') return connectorVerify(req, res, body);
+  if (path === '/v1/connector/health' && method === 'GET') return safeRoute(connectorHealth, req, res);
+  if (path === '/v1/connector/verify' && method === 'POST') return safeRoute(connectorVerify, req, res, body);
+  if (path === '/v1/connector/rotate-key' && method === 'POST') return safeRoute(rotateKey, req, res);
 
   // Security stats
-  if (path === '/v1/security/stats' && method === 'GET') return getSecurityStats(req, res);
+  if (path === '/v1/security/stats' && method === 'GET') return safeRoute(getSecurityStats, req, res);
 
   // Connector health
-  if (path === '/v1/connectors/health' && method === 'GET') return connectorHealthCheck(req, res);
+  if (path === '/v1/connectors/health' && method === 'GET') return safeRoute(connectorHealthCheck, req, res);
 
   // Detailed health
-  if (path === '/v1/health/detailed' && method === 'GET') return detailedHealth(req, res);
+  if (path === '/v1/health/detailed' && method === 'GET') return safeRoute(detailedHealth, req, res);
 
   // Metrics (admin only)
-  if (path === '/v1/metrics' && method === 'GET') return serveMetrics(req, res, urlObj);
+  if (path === '/v1/metrics' && method === 'GET') return safeRoute(serveMetrics, req, res, urlObj);
 
   // Fraud alerts (admin only)
-  if (path === '/v1/fraud-alerts' && method === 'GET') return serveFraudAlerts(req, res, urlObj);
+  if (path === '/v1/fraud-alerts' && method === 'GET') return safeRoute(serveFraudAlerts, req, res, urlObj);
 
   // Privacy & DPDP compliance routes
-  if (path === '/v1/privacy/notice' && method === 'GET') return privacyNotice(req, res);
-  if (path === '/v1/privacy/consent' && method === 'GET') return getConsent(req, res);
-  if (path === '/v1/privacy/consent' && method === 'POST') return grantConsent(req, res, body);
-  if (path === '/v1/privacy/consent' && method === 'DELETE') return deleteConsent(req, res, body);
-  if (path === '/v1/privacy/data-access' && method === 'GET') return dataAccessRequest(req, res);
-  if (path === '/v1/privacy/erasure' && method === 'POST') return erasureRequest(req, res, body);
-  if (path === '/v1/privacy/retention/enforce' && method === 'POST') return enforceRetention(req, res);
+  if (path === '/v1/privacy/notice' && method === 'GET') return safeRoute(privacyNotice, req, res);
+  if (path === '/v1/privacy/consent' && method === 'GET') return safeRoute(getConsent, req, res);
+  if (path === '/v1/privacy/consent' && method === 'POST') return safeRoute(grantConsent, req, res, body);
+  if (path === '/v1/privacy/consent' && method === 'DELETE') return safeRoute(deleteConsent, req, res, body);
+  if (path === '/v1/privacy/data-access' && method === 'GET') return safeRoute(dataAccessRequest, req, res);
+  if (path === '/v1/privacy/erasure' && method === 'POST') return safeRoute(erasureRequest, req, res, body);
+  if (path === '/v1/privacy/retention/enforce' && method === 'POST') return safeRoute(enforceRetention, req, res);
 
   // 404
   res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -277,11 +355,11 @@ async function bulkVerify(req, res, body) {
   for (const code of codes) {
     try {
       const payload = decryptCode(code);
-      const token = queryOne(`
+      const token = await queryOne(`
         SELECT t.id, t.status, t.credential_type, t.student_ref_token,
                c.name as college_name
         FROM verification_tokens t JOIN colleges c ON c.id = t.college_id
-        WHERE t.id = ?`, [payload.token_id]);
+        WHERE t.id = $1`, [payload.token_id]);
       results.push({
         code: code.slice(0, 20) + '...',
         status: token ? token.status : 'not_found',
@@ -298,33 +376,31 @@ async function bulkVerify(req, res, body) {
 }
 
 // ─── Token Analytics ──────────────────────────────────────────────────────────
-function tokenAnalytics(req, res) {
+async function tokenAnalytics(req, res) {
   const { requireAuth, requireRole } = require('./middleware/auth.js');
   const claims = requireAuth(req, res);
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
 
-  // Use parameterized queries to prevent SQL injection
   const isCollegeAdmin = claims.role === 'college_admin';
   const collegeId = claims.college_id;
 
-  // Validate college_id format if present (UUID format)
   if (isCollegeAdmin && collegeId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(collegeId)) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Invalid college_id format' }));
   }
 
   const monthly = isCollegeAdmin
-    ? query(`
-        SELECT strftime('%Y-%m', t.issued_at) as month,
+    ? await query(`
+        SELECT to_char(t.issued_at::timestamptz, 'YYYY-MM') as month,
                COUNT(*) as issued,
                SUM(CASE WHEN t.status = 'active' THEN 1 ELSE 0 END) as active,
                SUM(CASE WHEN t.status = 'revoked' THEN 1 ELSE 0 END) as revoked
-        FROM verification_tokens t WHERE t.college_id = ?
+        FROM verification_tokens t WHERE t.college_id = $1
         GROUP BY month ORDER BY month DESC LIMIT 12
       `, [collegeId])
-    : query(`
-        SELECT strftime('%Y-%m', t.issued_at) as month,
+    : await query(`
+        SELECT to_char(t.issued_at::timestamptz, 'YYYY-MM') as month,
                COUNT(*) as issued,
                SUM(CASE WHEN t.status = 'active' THEN 1 ELSE 0 END) as active,
                SUM(CASE WHEN t.status = 'revoked' THEN 1 ELSE 0 END) as revoked
@@ -332,8 +408,8 @@ function tokenAnalytics(req, res) {
         GROUP BY month ORDER BY month DESC LIMIT 12
       `);
 
-  const verificationTrends = query(`
-    SELECT date(r.created_at) as day,
+  const verificationTrends = await query(`
+    SELECT to_char(r.created_at::timestamptz, 'YYYY-MM-DD') as day,
            COUNT(*) as total,
            SUM(CASE WHEN r.result = 'verified' THEN 1 ELSE 0 END) as success,
            SUM(CASE WHEN r.result = 'error' THEN 1 ELSE 0 END) as failures,
@@ -348,7 +424,7 @@ function tokenAnalytics(req, res) {
 }
 
 // ─── Security Events Audit ────────────────────────────────────────────────────
-function getSecurityEvents(req, res, urlObj) {
+async function getSecurityEvents(req, res, urlObj) {
   const { requireAuth, requireRole } = require('./middleware/auth.js');
   const claims = requireAuth(req, res);
   if (!claims) return;
@@ -357,10 +433,11 @@ function getSecurityEvents(req, res, urlObj) {
   const limit = parseInt(urlObj.searchParams.get('limit') || '50', 10);
   const offset = parseInt(urlObj.searchParams.get('offset') || '0', 10);
 
-  const events = query(`
-    SELECT * FROM security_events ORDER BY created_at DESC LIMIT ? OFFSET ?
+  const events = await query(`
+    SELECT * FROM security_events ORDER BY created_at DESC LIMIT $1 OFFSET $2
   `, [limit, offset]);
-  const total = query('SELECT COUNT(*) as cnt FROM security_events')[0]?.cnt || 0;
+  const totalRow = await queryOne('SELECT COUNT(*) as cnt FROM security_events');
+  const total = Number(totalRow?.cnt) || 0;
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ events, count: events.length, total, limit, offset }));
@@ -372,7 +449,7 @@ async function connectorHealthCheck(req, res) {
   const claims = requireAuth(req, res);
   if (!claims) return;
 
-  const colleges = query('SELECT id, name, connector_url FROM colleges WHERE active = 1');
+  const colleges = await query('SELECT id, name, connector_url FROM colleges WHERE active = 1');
   const results = [];
 
   for (const college of colleges) {
@@ -406,7 +483,20 @@ async function connectorHealthCheck(req, res) {
 }
 
 // ─── Detailed Health ──────────────────────────────────────────────────────────
-function detailedHealth(req, res) {
+async function detailedHealth(req, res) {
+  const { requireAuth, requireRole } = require('./middleware/auth.js');
+  const claims = requireAuth(req, res);
+  if (!claims) return;
+  if (!requireRole(claims, 'super_admin', res)) return;
+
+  const [collegesRow, tokensRow, verifRow, failLoginsRow, secEventsRow] = await Promise.all([
+    queryOne('SELECT COUNT(*) as cnt FROM colleges WHERE active=1'),
+    queryOne('SELECT COUNT(*) as cnt FROM verification_tokens'),
+    queryOne('SELECT COUNT(*) as cnt FROM verification_requests'),
+    queryOne(`SELECT COUNT(*) as cnt FROM login_attempts WHERE success=0 AND created_at::date = CURRENT_DATE`),
+    queryOne(`SELECT COUNT(*) as cnt FROM security_events WHERE created_at::date = CURRENT_DATE`),
+  ]);
+
   const stats = {
     status: 'ok',
     version: '2.0.0',
@@ -414,13 +504,13 @@ function detailedHealth(req, res) {
     uptime_seconds: Math.floor(process.uptime()),
     memory_mb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
     db: {
-      colleges: query('SELECT COUNT(*) as cnt FROM colleges WHERE active=1')[0]?.cnt || 0,
-      tokens: query('SELECT COUNT(*) as cnt FROM verification_tokens')[0]?.cnt || 0,
-      verifications: query('SELECT COUNT(*) as cnt FROM verification_requests')[0]?.cnt || 0,
+      colleges: Number(collegesRow?.cnt) || 0,
+      tokens: Number(tokensRow?.cnt) || 0,
+      verifications: Number(verifRow?.cnt) || 0,
     },
     security: {
-      failed_logins_today: query(`SELECT COUNT(*) as cnt FROM login_attempts WHERE success=0 AND date(created_at) = date('now')`)[0]?.cnt || 0,
-      security_events_today: query(`SELECT COUNT(*) as cnt FROM security_events WHERE date(created_at) = date('now')`)[0]?.cnt || 0,
+      failed_logins_today: Number(failLoginsRow?.cnt) || 0,
+      security_events_today: Number(secEventsRow?.cnt) || 0,
     },
     checked_at: new Date().toISOString(),
   };
@@ -447,7 +537,7 @@ function serveMetrics(req, res, urlObj) {
 }
 
 // ─── Fraud alerts endpoint (admin only) ───────────────────────────────────────
-function serveFraudAlerts(req, res, urlObj) {
+async function serveFraudAlerts(req, res, urlObj) {
   const { requireAuth, requireRole } = require('./middleware/auth.js');
   const claims = requireAuth(req, res);
   if (!claims) return;
@@ -456,32 +546,37 @@ function serveFraudAlerts(req, res, urlObj) {
   const limit = parseInt(urlObj.searchParams.get('limit') || '50', 10);
   const offset = parseInt(urlObj.searchParams.get('offset') || '0', 10);
 
-  const alerts = query('SELECT * FROM fraud_alerts ORDER BY created_at DESC LIMIT ? OFFSET ?', [limit, offset]);
-  const total = query('SELECT COUNT(*) as cnt FROM fraud_alerts')[0]?.cnt || 0;
+  const [alerts, totalRow] = await Promise.all([
+    query('SELECT * FROM fraud_alerts ORDER BY created_at DESC LIMIT $1 OFFSET $2', [limit, offset]),
+    queryOne('SELECT COUNT(*) as cnt FROM fraud_alerts'),
+  ]);
+  const total = Number(totalRow?.cnt) || 0;
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ alerts, count: alerts.length, total, limit, offset }));
 }
 
 // ─── Fraud alert flusher (periodically saves buffered alerts to DB) ───────────
-function flushFraudAlerts() {
+async function flushFraudAlerts() {
   const alerts = fraud.flushAlerts();
   for (const a of alerts) {
     try {
-      run(`INSERT INTO fraud_alerts (id, alert_type, severity, actor_id, actor_email, ip_address, details)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [a.id, a.alert_type, a.severity, a.actor_id, a.actor_email, a.ip_address, a.details]);
+      await run(
+        `INSERT INTO fraud_alerts (id, alert_type, severity, actor_id, actor_email, ip_address, details)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [a.id, a.alert_type, a.severity, a.actor_id, a.actor_email, a.ip_address, a.details]
+      );
       metrics.recordFraudAlert();
       log('warn', `🚨 FRAUD ALERT: ${a.alert_type} [${a.severity}]`, { alert_id: a.id, actor: a.actor_email || a.ip_address });
     } catch { /* non-fatal */ }
   }
 }
 // Flush every 5 seconds
-setInterval(flushFraudAlerts, 5000).unref();
+setInterval(() => { flushFraudAlerts().catch(() => {}); }, 5000).unref();
 
 // ─── Seed data ────────────────────────────────────────────────────────────────
 async function seedDatabase() {
-  const existingAdmin = queryOne("SELECT id FROM users WHERE email='admin@authenx.in'");
+  const existingAdmin = await queryOne("SELECT id FROM users WHERE email='admin@authenx.in'");
   if (existingAdmin) { console.log('  ✓ Database already seeded'); return; }
 
   console.log('  → Seeding database (multi-college)...');
@@ -507,9 +602,12 @@ async function seedDatabase() {
   const colleges = [];
   if (registry.length > 0) {
     for (const r of registry) {
-      run(`INSERT OR IGNORE INTO colleges (id,name,short_code,public_key_hex,connector_url,shared_secret)
-           VALUES (?,?,?,?,?,?)`,
-        [r.id, r.name, r.short_code, r.public_key_hex, r.connector_url, r.shared_secret]);
+      await run(
+        `INSERT INTO colleges (id,name,short_code,public_key_hex,connector_url,shared_secret)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (id) DO NOTHING`,
+        [r.id, r.name, r.short_code, r.public_key_hex, r.connector_url, r.shared_secret]
+      );
       colleges.push(r);
     }
   } else {
@@ -520,8 +618,11 @@ async function seedDatabase() {
       { id: crypto.randomUUID(), name: 'BITS Pilani', short_code: 'BITS', connector_url: 'mock', shared_secret: crypto.randomBytes(32).toString('hex'), public_key_hex: fallbackPub },
     ];
     for (const c of fallbackColleges) {
-      run('INSERT INTO colleges (id,name,short_code,public_key_hex,connector_url,shared_secret) VALUES (?,?,?,?,?,?)',
-        [c.id, c.name, c.short_code, c.public_key_hex, c.connector_url, c.shared_secret]);
+      await run(
+        `INSERT INTO colleges (id,name,short_code,public_key_hex,connector_url,shared_secret)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [c.id, c.name, c.short_code, c.public_key_hex, c.connector_url, c.shared_secret]
+      );
       colleges.push(c);
     }
   }
@@ -532,14 +633,19 @@ async function seedDatabase() {
   const employerHash = await hashPassword('Employer@123');
 
   // Super admin - must change default password on first login
-  run('INSERT INTO users (id,email,password_hash,role,must_change_password) VALUES (?,?,?,?,1)',
-    [crypto.randomUUID(), 'admin@authenx.in', adminHash, 'super_admin']);
+  await run(
+    `INSERT INTO users (id,email,password_hash,role,must_change_password) VALUES ($1,$2,$3,$4,1)`,
+    [crypto.randomUUID(), 'admin@authenx.in', adminHash, 'super_admin']
+  );
 
   // College admins — one per college, must change default password
   for (const c of colleges) {
     const email = `${c.short_code.toLowerCase()}@authenx.in`;
-    run('INSERT OR IGNORE INTO users (id,email,password_hash,role,college_id,must_change_password) VALUES (?,?,?,?,?,1)',
-      [crypto.randomUUID(), email, collegeHash, 'college_admin', c.id]);
+    await run(
+      `INSERT INTO users (id,email,password_hash,role,college_id,must_change_password)
+       VALUES ($1,$2,$3,$4,$5,1) ON CONFLICT (email) DO NOTHING`,
+      [crypto.randomUUID(), email, collegeHash, 'college_admin', c.id]
+    );
   }
 
   // Employer accounts - must change default password
@@ -551,8 +657,11 @@ async function seedDatabase() {
     'campus@microsoft.com',
   ];
   for (const email of employers) {
-    run('INSERT OR IGNORE INTO users (id,email,password_hash,role,must_change_password) VALUES (?,?,?,?,1)',
-      [crypto.randomUUID(), email, employerHash, 'employer']);
+    await run(
+      `INSERT INTO users (id,email,password_hash,role,must_change_password)
+       VALUES ($1,$2,$3,$4,1) ON CONFLICT (email) DO NOTHING`,
+      [crypto.randomUUID(), email, employerHash, 'employer']
+    );
   }
 
   // ── Pre-issue demo tokens ───────────────────────────────────────────────
@@ -592,17 +701,19 @@ async function seedDatabase() {
     const issuance_signature = signEd25519(canonical_hash, privKey);
     const token_id = crypto.randomUUID();
 
-    run(`INSERT OR IGNORE INTO verification_tokens
-         (id, college_id, student_ref_token, canonical_hash, issuance_signature, schema_version, credential_type, status)
-         VALUES (?,?,?,?,?,?,?,?)`,
-      [token_id, college.id, s.student_ref_token, canonical_hash, issuance_signature, '1.0', 'DEGREE_CERTIFICATE', 'active']);
+    await run(
+      `INSERT INTO verification_tokens
+       (id, college_id, student_ref_token, canonical_hash, issuance_signature, schema_version, credential_type, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING`,
+      [token_id, college.id, s.student_ref_token, canonical_hash, issuance_signature, '1.0', 'DEGREE_CERTIFICATE', 'active']
+    );
 
     const code = encryptCode({ v: 1, token_id, college_id: college.id, student_ref_token: s.student_ref_token, credential_type: 'DEGREE_CERTIFICATE' });
     generatedCodes.push({ name: s.name, student_ref_token: s.student_ref_token, college: college.name, token_id, authenx_code: code });
   }
 
   // Revoke stu_ref_003 for testing
-  run("UPDATE verification_tokens SET status='revoked', revocation_reason='Re-enrolled for additional year', revoked_at=datetime('now') WHERE student_ref_token='stu_ref_003'");
+  await run("UPDATE verification_tokens SET status='revoked', revocation_reason='Re-enrolled for additional year', revoked_at=NOW() WHERE student_ref_token='stu_ref_003'");
 
   // Save generated codes
   _fs.writeFileSync(
@@ -698,11 +809,11 @@ tr:hover td{background:#f9fafb}
   <div id="loginError" class="alert alert-error hidden"></div>
   <div class="form-group">
     <label class="form-label">Email address</label>
-    <input class="form-input" id="loginEmail" type="email" value="admin@authenx.in" placeholder="email">
+    <input class="form-input" id="loginEmail" type="email" placeholder="email">
   </div>
   <div class="form-group">
     <label class="form-label">Password</label>
-    <input class="form-input" id="loginPass" type="password" value="Admin@123" placeholder="password">
+    <input class="form-input" id="loginPass" type="password" placeholder="password">
   </div>
   <button class="btn btn-primary" style="width:100%;justify-content:center" onclick="doLogin()">
     Sign in
@@ -1059,6 +1170,11 @@ function relTime(ts) {
  */
 async function signViaHsm(college_id, payload) {
   const hsmPort = parseInt(process.env.HSM_PORT || '9099', 10);
+  const restoredPath = await ensureHsmKeyFile(college_id);
+  if (!restoredPath) {
+    throw new Error(`HSM key missing for college ${college_id}`);
+  }
+
   return new Promise((resolve, reject) => {
     const reqBody = JSON.stringify({ college_id, payload });
     const req = require('node:http').request({
@@ -1092,31 +1208,50 @@ async function signViaHsm(college_id, payload) {
 }
 
 async function issueDemoRoute(req, res, body) {
-  const { requireAuth } = require('./middleware/auth.js');
+  const { requireAuth, requireRole } = require('./middleware/auth.js');
   const claims = requireAuth(req, res);
   if (!claims) return;
+  if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
 
   const {
-    college_id, student_ref_token, name, degree, branch,
-    cgpa, graduation_year, credential_type, issue_date
+    college_id, student_ref_token, degree, credential_type, issue_date
   } = body;
 
-  if (!college_id || !student_ref_token || !name || !degree || !branch || !credential_type) {
+  // college_admin can only issue for their own college
+  if (claims.role === 'college_admin' && claims.college_id !== college_id) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'Cannot issue tokens for another college' }));
+  }
+
+  if (!college_id || !student_ref_token || !degree || !credential_type) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Missing required fields' }));
   }
 
-  const college = queryOne('SELECT * FROM colleges WHERE id = ? AND active = 1', [college_id]);
+  const college = await queryOne('SELECT * FROM colleges WHERE id = $1 AND active = 1', [college_id]);
   if (!college) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'College not found' }));
   }
 
+  const { lookupStudent } = require('./db/students.js');
+  const student = await lookupStudent(college_id, student_ref_token);
+  if (!student) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ error: 'Student not found for this college', college_id, student_ref_token }));
+  }
+
   const fields = {
-    schema_version: '1.0', issuer_id: college_id, student_ref_token,
-    name, degree, branch, credential_type,
-    cgpa: cgpa || '', graduation_year: graduation_year || '',
-    issue_date: issue_date || new Date().toISOString().split('T')[0],
+    schema_version: '1.0',
+    issuer_id: college_id,
+    student_ref_token,
+    name: student.full_name,
+    degree,
+    branch: student.dept_name,
+    credential_type,
+    cgpa: student.cgpa != null ? String(student.cgpa) : '',
+    graduation_year: student.grad_year || '',
+    issue_date: student.issue_date || issue_date || new Date().toISOString().split('T')[0],
   };
   const canonical = buildCanonicalJson(fields);
   const canonical_hash = sha256(canonical);
@@ -1141,35 +1276,41 @@ async function issueDemoRoute(req, res, body) {
   }
 
   // Proper UPDATE/INSERT — avoids FK cascade issues from INSERT OR REPLACE
-  const existing = queryOne(
-    'SELECT id, status FROM verification_tokens WHERE college_id = ? AND student_ref_token = ?',
+  const existing = await queryOne(
+    'SELECT id, status FROM verification_tokens WHERE college_id = $1 AND student_ref_token = $2',
     [college_id, student_ref_token]
   );
 
   let token_id;
   if (existing && existing.status === 'revoked') {
     token_id = existing.id;
-    run(`UPDATE verification_tokens SET
-         canonical_hash = ?, issuance_signature = ?, schema_version = '1.0',
-         credential_type = ?, status = 'active',
-         revocation_reason = NULL, revoked_at = NULL,
-         issued_at = datetime('now')
-         WHERE id = ?`,
-      [canonical_hash, issuance_signature, credential_type, token_id]);
+    await run(
+      `UPDATE verification_tokens SET
+       canonical_hash = $1, issuance_signature = $2, schema_version = '1.0',
+       credential_type = $3, status = 'active',
+       revocation_reason = NULL, revoked_at = NULL,
+       issued_at = NOW()
+       WHERE id = $4`,
+      [canonical_hash, issuance_signature, credential_type, token_id]
+    );
   } else if (!existing) {
     token_id = crypto.randomUUID();
-    run(`INSERT INTO verification_tokens
-         (id, college_id, student_ref_token, canonical_hash, issuance_signature, schema_version, credential_type, status)
-         VALUES (?,?,?,?,?,'1.0',?,'active')`,
-      [token_id, college_id, student_ref_token, canonical_hash, issuance_signature, credential_type]);
+    await run(
+      `INSERT INTO verification_tokens
+       (id, college_id, student_ref_token, canonical_hash, issuance_signature, schema_version, credential_type, status)
+       VALUES ($1,$2,$3,$4,$5,'1.0',$6,'active')`,
+      [token_id, college_id, student_ref_token, canonical_hash, issuance_signature, credential_type]
+    );
   } else {
     // Active token already exists — re-issue replaces it
     token_id = existing.id;
-    run(`UPDATE verification_tokens SET
-         canonical_hash = ?, issuance_signature = ?, schema_version = '1.0',
-         credential_type = ?, issued_at = datetime('now')
-         WHERE id = ?`,
-      [canonical_hash, issuance_signature, credential_type, token_id]);
+    await run(
+      `UPDATE verification_tokens SET
+       canonical_hash = $1, issuance_signature = $2, schema_version = '1.0',
+       credential_type = $3, issued_at = NOW()
+       WHERE id = $4`,
+      [canonical_hash, issuance_signature, credential_type, token_id]
+    );
   }
 
   const authenx_code = encryptCode({
@@ -1178,6 +1319,16 @@ async function issueDemoRoute(req, res, body) {
     expires_at: null,
     checksum: sha256(`${token_id}:${college_id}:${student_ref_token}:${credential_type}`),
   });
+
+  // Persist the latest issued AuthenX code for this token.
+  await run(
+    `INSERT INTO issued_authenx_codes (token_id, authenx_code, created_at, updated_at)
+     VALUES ($1, $2, NOW(), NOW())
+     ON CONFLICT(token_id) DO UPDATE SET
+       authenx_code = EXCLUDED.authenx_code,
+       updated_at = NOW()`,
+    [token_id, authenx_code]
+  );
 
   res.writeHead(201, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ message: 'Token issued', token_id, canonical_hash, authenx_code }));
@@ -1236,25 +1387,30 @@ async function main() {
   validateStartupConfig();
 
   console.log('→ Initialising database...');
-  getDb(); // runs schema migration
+  await initDb();
   await seedDatabase();
 
-  // ── Key sync: load per-college keys from HSM key-store ──────────────────
-  // This ensures the demo issue route can sign with any college's key.
+  // ── Key sync: keep DB college keys and HSM key files aligned ────────────
   try {
-    const _path = require('node:path');
-    const _fs = require('node:fs');
+    const keyRows = await query(
+      'SELECT college_id, public_key_hex, private_key_enc FROM college_keys WHERE college_id IS NOT NULL'
+    );
+    let backfilled = 0;
+    for (const keyRow of keyRows) {
+      const restoreResult = await ensureHsmKeyFile(keyRow.college_id);
+      if (restoreResult?.restored) backfilled++;
+    }
+    if (backfilled > 0) console.log(`  ✓ Backfilled ${backfilled} HSM key files from college_keys`);
 
-    // Method 1: Multi-college key sync from HSM keys directory
-    const hsmKeysDir = _path.join(process.cwd(), '..', 'authenx-hsm', 'keys');
-    if (_fs.existsSync(hsmKeysDir)) {
-      const keyFiles = _fs.readdirSync(hsmKeysDir).filter(f => f.endsWith('.json'));
+    // Method 2: Multi-college key sync from HSM keys directory
+    if (fs.existsSync(HSM_KEYS_DIR)) {
+      const keyFiles = fs.readdirSync(HSM_KEYS_DIR).filter(f => f.endsWith('.json'));
       let synced = 0;
       for (const f of keyFiles) {
         try {
-          const keyData = JSON.parse(_fs.readFileSync(_path.join(hsmKeysDir, f), 'utf8'));
+          const keyData = JSON.parse(fs.readFileSync(path.join(HSM_KEYS_DIR, f), 'utf8'));
           if (keyData.college_id && keyData.public_key_hex) {
-            run('UPDATE colleges SET public_key_hex = ? WHERE id = ?', [keyData.public_key_hex, keyData.college_id]);
+            await run('UPDATE colleges SET public_key_hex = $1 WHERE id = $2', [keyData.public_key_hex, keyData.college_id]);
             // Set first key as fallback mock key
             if (!process.env.MOCK_CONNECTOR_PRIV_KEY && keyData.private_key_hex) {
               process.env.MOCK_CONNECTOR_PRIV_KEY = keyData.private_key_hex;
@@ -1266,10 +1422,10 @@ async function main() {
       if (synced > 0) console.log(`  ✓ Synced ${synced} college keys from HSM key-store`);
     }
 
-    // Method 2: Legacy single-key fallback (connector_key.json)
-    const keyFile = _path.join(process.cwd(), 'connector_key.json');
-    if (_fs.existsSync(keyFile)) {
-      const keyData = JSON.parse(_fs.readFileSync(keyFile, 'utf8'));
+    // Method 3: Legacy single-key fallback (connector_key.json)
+    const keyFile = path.join(process.cwd(), 'connector_key.json');
+    if (fs.existsSync(keyFile)) {
+      const keyData = JSON.parse(fs.readFileSync(keyFile, 'utf8'));
       if (keyData.privateKeyHex && keyData.publicKeyHex) {
         process.env.MOCK_CONNECTOR_PRIV_KEY = keyData.privateKeyHex;
         console.log('  ✓ Fallback key loaded from connector_key.json');
@@ -1326,9 +1482,13 @@ async function main() {
   process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
   process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-  server.listen(PORT, '0.0.0.0', () => {
-    const collegeCount = query('SELECT COUNT(*) as cnt FROM colleges WHERE active=1')[0]?.cnt || 0;
-    const userCount = query('SELECT COUNT(*) as cnt FROM users')[0]?.cnt || 0;
+  server.listen(PORT, '0.0.0.0', async () => {
+    const [collegeRow, userRow] = await Promise.all([
+      queryOne('SELECT COUNT(*) as cnt FROM colleges WHERE active=1'),
+      queryOne('SELECT COUNT(*) as cnt FROM users'),
+    ]);
+    const collegeCount = Number(collegeRow?.cnt) || 0;
+    const userCount = Number(userRow?.cnt) || 0;
 
     logStartup({ port: PORT, colleges: collegeCount, users: userCount });
 

@@ -9,7 +9,7 @@ const FIELDS = ['name', 'degree', 'branch', 'cgpa', 'graduation_year', 'issue_da
  * GET /v1/disclosure-policy
  * Returns current disclosure policy for the authenticated college.
  */
-function getDisclosurePolicy(req, res) {
+async function getDisclosurePolicy(req, res) {
   const claims = requireAuth(req, res);
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
@@ -23,8 +23,8 @@ function getDisclosurePolicy(req, res) {
     return res.end(JSON.stringify({ error: 'college_id required' }));
   }
 
-  const rows = query(
-    'SELECT field_name, visibility, role_filter, require_approval FROM disclosure_policies WHERE college_id = ?',
+  const rows = await query(
+    'SELECT field_name, visibility, role_filter, require_approval FROM disclosure_policies WHERE college_id = $1',
     [collegeId]
   );
 
@@ -48,7 +48,7 @@ function getDisclosurePolicy(req, res) {
  * Saves disclosure policy for the college.
  * Body: { policy: [{ field_name, visibility, role_filter, require_approval }] }
  */
-function saveDisclosurePolicy(req, res, body) {
+async function saveDisclosurePolicy(req, res, body) {
   const claims = requireAuth(req, res);
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
@@ -75,14 +75,14 @@ function saveDisclosurePolicy(req, res, body) {
     if (!FIELDS.includes(item.field_name)) continue;
     if (!validVisibilities.includes(item.visibility)) continue;
 
-    run(`
+    await run(`
       INSERT INTO disclosure_policies (id, college_id, field_name, visibility, role_filter, require_approval, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
       ON CONFLICT(college_id, field_name) DO UPDATE SET
-        visibility = excluded.visibility,
-        role_filter = excluded.role_filter,
-        require_approval = excluded.require_approval,
-        updated_at = excluded.updated_at
+        visibility = EXCLUDED.visibility,
+        role_filter = EXCLUDED.role_filter,
+        require_approval = EXCLUDED.require_approval,
+        updated_at = EXCLUDED.updated_at
     `, [
       crypto.randomUUID(), collegeId, item.field_name,
       item.visibility, item.role_filter || 'all',

@@ -7,7 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="verify.css">
-<script src="/shared/authenx-code.js"></script>
+<script src="../shared/authenx-code.js"></script>
 </head>
 <body>
 <div id="navbar"></div>
@@ -95,7 +95,7 @@
 
 <div id="toast-container" class="toast-container"></div>
 
-<script src="/employer/verify.js"></script>
+<script src="verify.js"></script>
 <script>
 if (!Auth.requireAuth()) {}
 document.getElementById('navbar').innerHTML = renderNavbar('verify');
@@ -236,7 +236,7 @@ async function submitCode(code) {
     const data = await API.post('/verify/code', { authenx_code: code });
     sessionStorage.setItem('verify_code', code);
     sessionStorage.setItem('verify_decode', JSON.stringify(data));
-    window.location.href = '/employer/decoding.html';
+    window.location.href = 'decoding.html';
   } catch (err) {
     toast('Verification failed: ' + err.message, 'error');
   }

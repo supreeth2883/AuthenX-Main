@@ -20,15 +20,11 @@ const { run, queryOne, query } = require('../db/client.js');
 
 /**
  * Record explicit consent for data processing.
- * @param {string} userId - User granting consent
- * @param {string} purpose - Purpose code (e.g., 'credential_verification', 'analytics')
- * @param {string} scope - Scope of consent
- * @param {string} ip - IP address of consent
  */
-function recordConsent(userId, purpose, scope, ip) {
+async function recordConsent(userId, purpose, scope, ip) {
   const id = crypto.randomUUID();
-  run(`INSERT INTO consent_records (id, user_id, purpose, scope, ip_address, granted)
-       VALUES (?, ?, ?, ?, ?, 1)`,
+  await run(`INSERT INTO consent_records (id, user_id, purpose, scope, ip_address, granted)
+       VALUES ($1, $2, $3, $4, $5, 1)`,
     [id, userId, purpose, scope, ip]);
   return id;
 }
@@ -36,18 +32,18 @@ function recordConsent(userId, purpose, scope, ip) {
 /**
  * Revoke previously granted consent.
  */
-function revokeConsent(userId, purpose) {
-  run(`UPDATE consent_records SET granted = 0, revoked_at = datetime('now')
-       WHERE user_id = ? AND purpose = ? AND granted = 1`,
+async function revokeConsent(userId, purpose) {
+  await run(`UPDATE consent_records SET granted = 0, revoked_at = NOW()
+       WHERE user_id = $1 AND purpose = $2 AND granted = 1`,
     [userId, purpose]);
 }
 
 /**
  * Check if a user has active consent for a specific purpose.
  */
-function hasConsent(userId, purpose) {
-  const record = queryOne(
-    `SELECT id FROM consent_records WHERE user_id = ? AND purpose = ? AND granted = 1`,
+async function hasConsent(userId, purpose) {
+  const record = await queryOne(
+    `SELECT id FROM consent_records WHERE user_id = $1 AND purpose = $2 AND granted = 1`,
     [userId, purpose]
   );
   return !!record;
@@ -56,10 +52,10 @@ function hasConsent(userId, purpose) {
 /**
  * Get all consent records for a user.
  */
-function getUserConsents(userId) {
+async function getUserConsents(userId) {
   return query(
     `SELECT id, purpose, scope, granted, created_at, revoked_at
-     FROM consent_records WHERE user_id = ? ORDER BY created_at DESC`,
+     FROM consent_records WHERE user_id = $1 ORDER BY created_at DESC`,
     [userId]
   );
 }
@@ -68,40 +64,39 @@ function getUserConsents(userId) {
 
 /**
  * Generate a complete data access report for a user.
- * Shows ALL data AuthenX stores about them (which is minimal by design).
  */
-function generateDataAccessReport(userId) {
-  const user = queryOne(
-    'SELECT id, email, role, college_id, created_at FROM users WHERE id = ?',
+async function generateDataAccessReport(userId) {
+  const user = await queryOne(
+    'SELECT id, email, role, college_id, created_at FROM users WHERE id = $1',
     [userId]
   );
   if (!user) return null;
 
-  const consents = getUserConsents(userId);
+  const consents = await getUserConsents(userId);
 
-  const verifications = query(
+  const verifications = await query(
     `SELECT vr.id, vr.request_type, vr.result, vr.created_at, vr.latency_ms
-     FROM verification_requests vr WHERE vr.employer_name = ?
+     FROM verification_requests vr WHERE vr.employer_name = $1
      ORDER BY vr.created_at DESC LIMIT 100`,
     [user.email]
   );
 
-  const tokens = query(
+  const tokens = await query(
     `SELECT id, credential_type, status, issued_at, revoked_at
-     FROM verification_tokens WHERE college_id = ?
+     FROM verification_tokens WHERE college_id = $1
      ORDER BY issued_at DESC LIMIT 100`,
     [user.college_id || 'none']
   );
 
-  const securityEvents = query(
+  const securityEvents = await query(
     `SELECT event_type, created_at, ip_address
-     FROM security_events WHERE actor_id = ?
+     FROM security_events WHERE actor_id = $1
      ORDER BY created_at DESC LIMIT 50`,
     [userId]
   );
 
-  const mfaStatus = queryOne(
-    'SELECT enabled, verified_at, created_at FROM mfa_secrets WHERE user_id = ?',
+  const mfaStatus = await queryOne(
+    'SELECT enabled, verified_at, created_at FROM mfa_secrets WHERE user_id = $1',
     [userId]
   );
 
@@ -149,33 +144,32 @@ function generateDataAccessReport(userId) {
 
 /**
  * Process a data erasure request (Right to be Forgotten).
- * Deletes all non-essential user data while preserving audit integrity.
  */
-function processErasureRequest(userId, reason, ip) {
+async function processErasureRequest(userId, reason, ip) {
   const requestId = crypto.randomUUID();
 
   // Log the erasure request itself (must be kept for compliance)
-  run(`INSERT INTO erasure_requests (id, user_id, reason, ip_address, status)
-       VALUES (?, ?, ?, ?, 'processing')`,
+  await run(`INSERT INTO erasure_requests (id, user_id, reason, ip_address, status)
+       VALUES ($1, $2, $3, $4, 'processing')`,
     [requestId, userId, reason, ip]);
 
   // Delete user-specific data
-  run('DELETE FROM mfa_secrets WHERE user_id = ?', [userId]);
-  run('DELETE FROM mfa_backup_codes WHERE user_id = ?', [userId]);
-  run('DELETE FROM consent_records WHERE user_id = ?', [userId]);
-  run('DELETE FROM refresh_tokens WHERE user_id = ?', [userId]);
+  await run('DELETE FROM mfa_secrets WHERE user_id = $1', [userId]);
+  await run('DELETE FROM mfa_backup_codes WHERE user_id = $1', [userId]);
+  await run('DELETE FROM consent_records WHERE user_id = $1', [userId]);
+  await run('DELETE FROM refresh_tokens WHERE user_id = $1', [userId]);
 
   // Anonymize security events (keep structure, remove PII)
-  run(`UPDATE security_events SET actor_email = '[ERASED]', ip_address = '[ERASED]'
-       WHERE actor_id = ?`, [userId]);
+  await run(`UPDATE security_events SET actor_email = '[ERASED]', ip_address = '[ERASED]'
+       WHERE actor_id = $1`, [userId]);
 
   // Anonymize verification requests
-  run(`UPDATE verification_requests SET employer_name = '[ERASED]'
-       WHERE employer_name = (SELECT email FROM users WHERE id = ?)`, [userId]);
+  await run(`UPDATE verification_requests SET employer_name = '[ERASED]'
+       WHERE employer_name = (SELECT email FROM users WHERE id = $1)`, [userId]);
 
   // Mark erasure complete
-  run(`UPDATE erasure_requests SET status = 'completed', completed_at = datetime('now')
-       WHERE id = ?`, [requestId]);
+  await run(`UPDATE erasure_requests SET status = 'completed', completed_at = NOW()
+       WHERE id = $1`, [requestId]);
 
   return { request_id: requestId, status: 'completed' };
 }
@@ -192,15 +186,14 @@ const RETENTION_DAYS = {
 
 /**
  * Enforce data retention policy by purging expired records.
- * Should be run on a schedule (e.g., daily cron).
  */
-function enforceRetentionPolicy() {
+async function enforceRetentionPolicy() {
   const results = {};
 
   for (const [table, days] of Object.entries(RETENTION_DAYS)) {
     try {
       const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
-      run(`DELETE FROM ${table} WHERE created_at < ?`, [cutoff]);
+      await run(`DELETE FROM ${table} WHERE created_at < $1`, [cutoff]);
       results[table] = { purged: true, retention_days: days, cutoff };
     } catch (err) {
       results[table] = { purged: false, error: err.message };

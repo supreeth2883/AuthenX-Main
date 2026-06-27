@@ -4,7 +4,16 @@
       "Bash(python3:*)",
       "Bash(node:*)",
       "Bash(grep -l 'app.css\\\\|app.js' *.html)",
-      "Bash(grep -h 'src.*app.js' *.html)"
+      "Bash(grep -h 'src.*app.js' *.html)",
+      "Bash(dir \"c:\\\\Users\\\\BHANU TEJA GUPTA V\\\\Downloads\\\\Projects\\\\AuthenX-Main\")",
+      "Bash(dir \"c:\\\\Users\\\\BHANU TEJA GUPTA V\\\\Downloads\\\\Projects\\\\AuthenX-Main\\\\authenx-node\\\\logs\")",
+      "Bash(taskkill /F /PID 31488 /PID 37228)",
+      "Read(//tmp/**)",
+      "Bash(netstat -ano)",
+      "Bash(findstr \":3000\")",
+      "Bash(findstr LISTENING)",
+      "Bash(wmic process:*)",
+      "Bash(PG_PROVISION_PASSWORD=Postgres@123 node mock-erp-cvr-seed.js)"
     ]
   }
 }

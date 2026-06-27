@@ -23,7 +23,7 @@
           <div class="connector-status" id="connector-status">
             <div class="pulse-dot"></div> Checking...
           </div>
-          <a href="/college/issue.html" class="btn btn-primary">
+          <a href="issue.html" class="btn btn-primary">
             <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
             </svg>
@@ -92,7 +92,7 @@
     </div>
   </div>
 
-  <script src="/college/app.js"></script>
+  <script src="app.js"></script>
   <script>
     if (!Flow.guard('tokens')) { }
     document.getElementById('sidebar-mount').innerHTML = renderSidebar('tokens');
@@ -150,7 +150,7 @@
         tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
       <h3>No tokens found</h3>
       <p>${currentFilter !== 'all' ? 'No ' + currentFilter + ' tokens.' : 'No credentials issued yet.'}</p>
-      <a href="/college/issue.html" class="btn btn-primary">Issue First Credential</a>
+      <a href="issue.html" class="btn btn-primary">Issue First Credential</a>
     </div></td></tr>`;
         return;
       }
@@ -160,26 +160,26 @@
         const strike = ['revoked', 'superseded'].includes(t.status) ? 'text-decoration:line-through;color:var(--ax-subtle)' : '';
         const canAct = t.status === 'active';
         return `
-      <tr style="${faded};cursor:pointer" onclick="toggleDetails('${t.id}')">
+      <tr style="${faded};cursor:pointer" data-token-id="${esc(t.id)}" onclick="toggleDetails(this.dataset.tokenId)">
         <td>
-          <div style="font-family:monospace;font-size:11px;color:var(--ax-muted)">${(t.id || '').slice(0, 8)}…</div>
+          <div style="font-family:monospace;font-size:11px;color:var(--ax-muted)">${esc((t.id || '').slice(0, 8))}…</div>
         </td>
         <td>
-          <div style="font-family:monospace;font-size:12px;font-weight:600;color:var(--ax-text);${strike}">${t.student_ref_token || '—'}</div>
+          <div style="font-family:monospace;font-size:12px;font-weight:600;color:var(--ax-text);${strike}">${esc(t.student_ref_token || '—')}</div>
         </td>
-        <td><span style="font-size:12px">${(t.credential_type || '—').replace(/_/g, ' ')}</span></td>
+        <td><span style="font-size:12px">${esc((t.credential_type || '—').replace(/_/g, ' '))}</span></td>
         <td style="font-size:12px">${formatDate(t.issued_at)}</td>
         <td style="font-size:12px">${t.last_verified_at ? formatDate(t.last_verified_at) : '<span style="color:var(--ax-subtle)">Never</span>'}</td>
         <td style="font-size:13px;font-weight:600;color:var(--ax-text)">${t.verification_count || 0}</td>
         <td>
           ${lifecycleBadge(t.status)}
-          ${t.revocation_reason ? `<div style="font-size:11px;color:var(--ax-subtle);margin-top:3px">${t.revocation_reason.slice(0, 40)}…</div>` : ''}
+          ${t.revocation_reason ? `<div style="font-size:11px;color:var(--ax-subtle);margin-top:3px">${esc(t.revocation_reason.slice(0, 40))}…</div>` : ''}
         </td>
         <td onclick="event.stopPropagation()">
           ${canAct ? `
             <div style="display:flex;gap:6px;flex-wrap:wrap">
-              <button class="btn btn-danger btn-sm" onclick="revokeToken('${t.id}','${t.student_ref_token}')">Revoke</button>
-              <button class="btn btn-secondary btn-sm" onclick="correctToken('${t.id}','${t.student_ref_token}')">Reissue</button>
+              <button class="btn btn-danger btn-sm" data-token-id="${esc(t.id)}" data-ref="${esc(t.student_ref_token)}" onclick="revokeToken(this.dataset.tokenId,this.dataset.ref)">Revoke</button>
+              <button class="btn btn-secondary btn-sm" data-token-id="${esc(t.id)}" data-ref="${esc(t.student_ref_token)}" onclick="correctToken(this.dataset.tokenId,this.dataset.ref)">Reissue</button>
             </div>
           ` : '<span style="font-size:12px;color:var(--ax-subtle)">—</span>'}
         </td>
@@ -203,23 +203,25 @@
         const t = data.token;
         document.getElementById('token-details-content').innerHTML = `
       <div class="detail-grid">
-        <div class="detail-item"><label>Token ID</label><value>${t.id}</value></div>
-        <div class="detail-item"><label>College</label><value>${t.college_name} (${t.short_code})</value></div>
+        <div class="detail-item"><label>Token ID</label><value>${esc(t.id)}</value></div>
+        <div class="detail-item"><label>College</label><value>${esc(t.college_name)} (${esc(t.short_code)})</value></div>
         <div class="detail-item"><label>Status</label><value>${lifecycleBadge(t.status)}</value></div>
-        <div class="detail-item"><label>Credential Type</label><value>${(t.credential_type || '—').replace(/_/g, ' ')}</value></div>
+        <div class="detail-item"><label>Credential Type</label><value>${esc((t.credential_type || '—').replace(/_/g, ' '))}</value></div>
         <div class="detail-item"><label>Issued At</label><value>${formatDate(t.issued_at)}</value></div>
-        <div class="detail-item"><label>Verification Count</label><value>${t.verification_count || 0}</value></div>
+        <div class="detail-item"><label>Verification Count</label><value>${esc(String(t.verification_count || 0))}</value></div>
         <div class="detail-item"><label>Last Verified</label><value>${t.last_verified_at ? formatDate(t.last_verified_at) : 'Never'}</value></div>
-        <div class="detail-item"><label>Last Result</label><value>${t.last_result || '—'}</value></div>
-        <div class="detail-item"><label>Canonical Hash</label><value>${(t.canonical_hash || '').slice(0, 32)}…</value></div>
-        <div class="detail-item"><label>Schema Version</label><value>${t.schema_version}</value></div>
-        ${t.revocation_reason ? `<div class="detail-item"><label>Revocation Reason</label><value>${t.revocation_reason}</value></div>` : ''}
-        ${t.superseded_by ? `<div class="detail-item"><label>Superseded By</label><value>${t.superseded_by.slice(0, 16)}…</value></div>` : ''}
-        ${t.correction_token_id ? `<div class="detail-item"><label>Corrects Token</label><value>${t.correction_token_id.slice(0, 16)}…</value></div>` : ''}
+        <div class="detail-item"><label>Last Result</label><value>${esc(t.last_result || '—')}</value></div>
+        <div class="detail-item"><label>Canonical Hash</label><value>${esc((t.canonical_hash || '').slice(0, 32))}…</value></div>
+        <div class="detail-item"><label>Schema Version</label><value>${esc(String(t.schema_version ?? ''))}</value></div>
+        ${t.revocation_reason ? `<div class="detail-item"><label>Revocation Reason</label><value>${esc(t.revocation_reason)}</value></div>` : ''}
+        ${t.superseded_by ? `<div class="detail-item"><label>Superseded By</label><value>${esc(t.superseded_by.slice(0, 16))}…</value></div>` : ''}
+        ${t.correction_token_id ? `<div class="detail-item"><label>Corrects Token</label><value>${esc(t.correction_token_id.slice(0, 16))}…</value></div>` : ''}
       </div>`;
       } catch (err) {
-        document.getElementById('token-details-content').innerHTML =
-          `<p style="color:var(--ax-revoked);font-size:13px">Failed to load details: ${err.message}</p>`;
+        const msg = document.createElement('p');
+        msg.style.cssText = 'color:var(--ax-revoked);font-size:13px';
+        msg.textContent = 'Failed to load details: ' + err.message;
+        document.getElementById('token-details-content').replaceChildren(msg);
       }
     }
 
@@ -233,7 +235,7 @@
       showModal({
         title: 'Revoke Credential',
         body: `
-      <p>Permanently revoke credential for <strong>${ref}</strong>.</p>
+      <p>Permanently revoke credential for <strong>${esc(ref)}</strong>.</p>
       <p style="margin-top:8px;padding:10px;background:var(--ax-revoked-bg);border-radius:6px;color:var(--ax-revoked);font-size:13px">
         ⚠ This cannot be undone. Future verifications will fail.
       </p>
@@ -256,7 +258,7 @@
           const reason = sel === '__custom' ? (custom || 'Custom reason') : sel;
           try {
             await API.post('/tokens/revoke', { token_id: tokenId, reason });
-            toast(`✓ Credential for ${ref} has been revoked`, 'success');
+            toast('Credential for ' + ref + ' has been revoked', 'success');
             loadTokens();
           } catch (err) {
             toast('Revoke failed: ' + err.message, 'error');
@@ -275,7 +277,7 @@
       showModal({
         title: 'Reissue (Correction)',
         body: `
-      <p>Create a <strong>correction token</strong> for <strong>${ref}</strong>.</p>
+      <p>Create a <strong>correction token</strong> for <strong>${esc(ref)}</strong>.</p>
       <div style="margin-top:10px;padding:12px;background:var(--ax-sky);border-radius:8px;font-size:13px">
         <strong>What happens:</strong>
         <ul style="margin:6px 0 0 16px;line-height:1.7">
@@ -297,7 +299,7 @@
           if (!reason) { toast('Please enter a correction reason', 'error'); return; }
           try {
             const result = await API.post('/tokens/correct', { token_id: tokenId, reason });
-            toast(`✓ Correction created. New token: ${result.new_token_id.slice(0, 8)}…`, 'success');
+            toast('Correction created. New token: ' + result.new_token_id.slice(0, 8) + '…', 'success');
             loadTokens();
           } catch (err) {
             toast('Correction failed: ' + err.message, 'error');

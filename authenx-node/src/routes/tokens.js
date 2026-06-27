@@ -14,7 +14,7 @@ const { issueLimiter } = require('../middleware/rate-limiter.js');
  * The connector sends: credential fields + issuance_signature (Ed25519 over canonical hash)
  * AuthenX stores: hash + signature only — never raw student data
  */
-function issueToken(req, res, body) {
+async function issueToken(req, res, body) {
   const claims = requireAuth(req, res);
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
@@ -34,7 +34,7 @@ function issueToken(req, res, body) {
   }
 
   // Fetch college to get public key for signature verification
-  const college = queryOne('SELECT * FROM colleges WHERE id = ? AND active = 1', [college_id]);
+  const college = await queryOne('SELECT * FROM colleges WHERE id = $1 AND active = 1', [college_id]);
   if (!college) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'College not found or inactive' }));
@@ -66,8 +66,8 @@ function issueToken(req, res, body) {
   }
 
   // Check for duplicate
-  const existing = queryOne(
-    'SELECT id, status FROM verification_tokens WHERE college_id = ? AND student_ref_token = ?',
+  const existing = await queryOne(
+    'SELECT id, status FROM verification_tokens WHERE college_id = $1 AND student_ref_token = $2',
     [college_id, student_ref_token]
   );
   if (existing && existing.status === 'active') {
@@ -76,23 +76,21 @@ function issueToken(req, res, body) {
   }
 
   // Store — privacy-first: hash + signature only, no raw student data
-  // If a revoked token exists: UPDATE it in place (preserve ID to avoid FK violations)
-  // Otherwise: INSERT a new token
   let token_id;
   if (existing && existing.status === 'revoked') {
     token_id = existing.id;
-    run(`UPDATE verification_tokens SET
-         canonical_hash = ?, issuance_signature = ?, schema_version = ?,
-         credential_type = ?, status = 'active',
+    await run(`UPDATE verification_tokens SET
+         canonical_hash = $1, issuance_signature = $2, schema_version = $3,
+         credential_type = $4, status = 'active',
          revocation_reason = NULL, revoked_at = NULL,
-         issued_at = datetime('now')
-         WHERE id = ?`,
+         issued_at = NOW()
+         WHERE id = $5`,
       [canonical_hash, issuance_signature, schema_version, credential_type, token_id]);
   } else {
     token_id = crypto.randomUUID();
-    run(`INSERT INTO verification_tokens
+    await run(`INSERT INTO verification_tokens
          (id, college_id, student_ref_token, canonical_hash, issuance_signature, schema_version, credential_type, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'active')`,
       [token_id, college_id, student_ref_token, canonical_hash, issuance_signature, schema_version, credential_type]);
   }
 
@@ -105,10 +103,20 @@ function issueToken(req, res, body) {
     student_ref_token,
     credential_type,
     issued_at: new Date().toISOString(),
-    expires_at: null, // null = no expiry; set ISO string for time-limited codes
+    expires_at: null,
     checksum: codeSha(`${token_id}:${college_id}:${student_ref_token}:${credential_type}`),
   };
   const authenx_code = encryptCode(codePayload);
+
+  // Persist the latest issued AuthenX code for this token.
+  await run(
+    `INSERT INTO issued_authenx_codes (token_id, authenx_code, created_at, updated_at)
+     VALUES ($1, $2, NOW(), NOW())
+     ON CONFLICT(token_id) DO UPDATE SET
+       authenx_code = EXCLUDED.authenx_code,
+       updated_at = NOW()`,
+    [token_id, authenx_code]
+  );
 
   res.writeHead(201, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({
@@ -124,7 +132,7 @@ function issueToken(req, res, body) {
  * POST /v1/tokens/revoke
  * Revoke a token (college_admin or super_admin)
  */
-function revokeToken(req, res, body) {
+async function revokeToken(req, res, body) {
   const claims = requireAuth(req, res);
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
@@ -135,7 +143,7 @@ function revokeToken(req, res, body) {
     return res.end(JSON.stringify({ error: 'token_id and reason are required' }));
   }
 
-  const token = queryOne('SELECT * FROM verification_tokens WHERE id = ?', [token_id]);
+  const token = await queryOne('SELECT * FROM verification_tokens WHERE id = $1', [token_id]);
   if (!token) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'Token not found' }));
@@ -150,16 +158,15 @@ function revokeToken(req, res, body) {
   }
 
   const now = new Date().toISOString();
-  transaction(() => {
-    run(`UPDATE verification_tokens SET status='revoked', revocation_reason=?, revoked_at=? WHERE id=?`,
+  await transaction(async (db) => {
+    await db.run(`UPDATE verification_tokens SET status='revoked', revocation_reason=$1, revoked_at=$2 WHERE id=$3`,
       [reason, now, token_id]);
     // Immediately invalidate cache so next verification reflects revocation
     verificationCache.invalidate(token_id);
-    run(`INSERT INTO revocation_events (id, token_id, reason, revoked_by) VALUES (?, ?, ?, ?)`,
+    await db.run(`INSERT INTO revocation_events (id, token_id, reason, revoked_by) VALUES ($1, $2, $3, $4)`,
       [crypto.randomUUID(), token_id, reason, claims.user_id]);
-    // Immutable security event logging
-    run(`INSERT INTO security_events (id, event_type, actor_id, actor_email, target_id, details)
-         VALUES (?, 'token_revoked', ?, ?, ?, ?)`,
+    await db.run(`INSERT INTO security_events (id, event_type, actor_id, actor_email, target_id, details)
+         VALUES ($1, 'token_revoked', $2, $3, $4, $5)`,
       [crypto.randomUUID(), claims.user_id, claims.email, token_id, `Reason: ${reason}`]);
   });
 
@@ -168,17 +175,17 @@ function revokeToken(req, res, body) {
 }
 
 /** GET /v1/tokens/:id — token status */
-function getToken(req, res, id) {
+async function getToken(req, res, id) {
   const claims = requireAuth(req, res);
   if (!claims) return;
 
-  const token = queryOne(`
+  const token = await queryOne(`
     SELECT t.id, t.college_id, t.student_ref_token, t.canonical_hash,
            t.credential_type, t.status, t.revocation_reason, t.revoked_at, t.issued_at,
            c.name as college_name, c.short_code
     FROM verification_tokens t
     JOIN colleges c ON c.id = t.college_id
-    WHERE t.id = ?
+    WHERE t.id = $1
   `, [id]);
 
   if (!token) {
@@ -191,24 +198,24 @@ function getToken(req, res, id) {
 }
 
 /** GET /v1/tokens — list tokens (filtered by college for college_admin) */
-function listTokens(req, res) {
+async function listTokens(req, res) {
   const claims = requireAuth(req, res);
   if (!claims) return;
 
   let rows;
   if (claims.role === 'super_admin') {
-    rows = query(`
+    rows = await query(`
       SELECT t.id, t.college_id, t.student_ref_token, t.credential_type,
              t.status, t.issued_at, c.name as college_name
       FROM verification_tokens t JOIN colleges c ON c.id = t.college_id
       ORDER BY t.issued_at DESC LIMIT 100
     `);
   } else {
-    rows = query(`
+    rows = await query(`
       SELECT t.id, t.college_id, t.student_ref_token, t.credential_type,
              t.status, t.issued_at, c.name as college_name
       FROM verification_tokens t JOIN colleges c ON c.id = t.college_id
-      WHERE t.college_id = ?
+      WHERE t.college_id = $1
       ORDER BY t.issued_at DESC LIMIT 100
     `, [claims.college_id]);
   }

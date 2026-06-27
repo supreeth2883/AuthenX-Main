@@ -5,11 +5,8 @@ const { requireAuth, requireRole } = require('../middleware/auth.js');
 /**
  * GET /v1/connector-config
  * Returns persisted connector onboarding configuration for a college.
- *
- * - college_admin: can only access their own college
- * - super_admin: may pass ?college_id=... to inspect a college
  */
-function getConnectorConfig(req, res) {
+async function getConnectorConfig(req, res) {
   const claims = requireAuth(req, res);
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
@@ -25,8 +22,8 @@ function getConnectorConfig(req, res) {
     return res.end(JSON.stringify({ error: 'college_id required' }));
   }
 
-  const college = queryOne(
-    'SELECT id, name, short_code, connector_url FROM colleges WHERE id = ? AND active = 1',
+  const college = await queryOne(
+    'SELECT id, name, short_code, connector_url FROM colleges WHERE id = $1 AND active = 1',
     [collegeId]
   );
   if (!college) {
@@ -34,9 +31,9 @@ function getConnectorConfig(req, res) {
     return res.end(JSON.stringify({ error: 'College not found' }));
   }
 
-  const cfg = queryOne(
+  const cfg = await queryOne(
     `SELECT onboarding_completed, erp_type, connector_url, connector_config_json, field_mapping_json, updated_at
-     FROM college_connector_configs WHERE college_id = ?`,
+     FROM college_connector_configs WHERE college_id = $1`,
     [collegeId]
   );
 
@@ -71,7 +68,7 @@ function getConnectorConfig(req, res) {
  *   field_mapping?: object
  * }
  */
-function saveConnectorConfig(req, res, body) {
+async function saveConnectorConfig(req, res, body) {
   const claims = requireAuth(req, res);
   if (!claims) return;
   if (!requireRole(claims, ['super_admin', 'college_admin'], res)) return;
@@ -85,7 +82,7 @@ function saveConnectorConfig(req, res, body) {
     return res.end(JSON.stringify({ error: 'college_id required' }));
   }
 
-  const college = queryOne('SELECT id FROM colleges WHERE id = ? AND active = 1', [collegeId]);
+  const college = await queryOne('SELECT id FROM colleges WHERE id = $1 AND active = 1', [collegeId]);
   if (!college) {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'College not found' }));
@@ -98,24 +95,24 @@ function saveConnectorConfig(req, res, body) {
   const field_mapping_json = body.field_mapping ? JSON.stringify(body.field_mapping) : null;
   const now = new Date().toISOString();
 
-  run(
+  await run(
     `INSERT INTO college_connector_configs
       (college_id, onboarding_completed, erp_type, connector_url, connector_config_json, field_mapping_json, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      ON CONFLICT(college_id) DO UPDATE SET
-       onboarding_completed = excluded.onboarding_completed,
-       erp_type = excluded.erp_type,
-       connector_url = excluded.connector_url,
-       connector_config_json = excluded.connector_config_json,
-       field_mapping_json = excluded.field_mapping_json,
-       updated_at = excluded.updated_at
+       onboarding_completed = EXCLUDED.onboarding_completed,
+       erp_type = EXCLUDED.erp_type,
+       connector_url = EXCLUDED.connector_url,
+       connector_config_json = EXCLUDED.connector_config_json,
+       field_mapping_json = EXCLUDED.field_mapping_json,
+       updated_at = EXCLUDED.updated_at
     `,
     [collegeId, onboarding_completed, erp_type, connector_url, connector_config_json, field_mapping_json, now]
   );
 
   // Keep colleges.connector_url aligned so existing code paths remain correct.
   if (connector_url) {
-    run('UPDATE colleges SET connector_url = ? WHERE id = ?', [connector_url, collegeId]);
+    await run('UPDATE colleges SET connector_url = $1 WHERE id = $2', [connector_url, collegeId]);
   }
 
   res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -123,4 +120,3 @@ function saveConnectorConfig(req, res, body) {
 }
 
 module.exports = { getConnectorConfig, saveConnectorConfig };
-

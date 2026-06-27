@@ -9,13 +9,14 @@ const { verifyLimiter }  = require('../middleware/rate-limiter.js');
 const { callWithBreaker, getBreakerState } = require('../middleware/circuit-breaker.js');
 const { signRequest } = require('../middleware/hmac-auth.js');
 const verificationCache  = require('../cache/verification-cache.js');
+const { lookupStudent: lookupCentralStudent } = require('../db/students.js');
 
 /**
  * POST /v1/verify/code
  * Employer pastes an AuthenX Code — we decrypt and return token metadata.
  * Does NOT hit the college ERP — just decrypts the code and returns status.
  */
-function decodeCode(req, res, body) {
+async function decodeCode(req, res, body) {
   const claims = requireAuth(req, res);
   if (!claims) return;
 
@@ -33,13 +34,13 @@ function decodeCode(req, res, body) {
     return res.end(JSON.stringify({ error: 'Invalid or tampered AuthenX Code', detail: err.message }));
   }
 
-  const token = queryOne(`
+  const token = await queryOne(`
     SELECT t.id, t.status, t.credential_type, t.canonical_hash, t.schema_version,
            t.student_ref_token, t.issued_at, t.revocation_reason, t.revoked_at,
            c.name as college_name, c.short_code, c.id as college_id
     FROM verification_tokens t
     JOIN colleges c ON c.id = t.college_id
-    WHERE t.id = ?
+    WHERE t.id = $1
   `, [payload.token_id]);
 
   if (!token) {
@@ -48,9 +49,9 @@ function decodeCode(req, res, body) {
   }
 
   // Log the decode event
-  run(`INSERT INTO verification_requests
+  await run(`INSERT INTO verification_requests
        (id, token_id, employer_name, request_type, result, hash_match, sig_valid)
-       VALUES (?, ?, ?, 'code_decode', ?, 1, 1)`,
+       VALUES ($1, $2, $3, 'code_decode', $4, 1, 1)`,
     [crypto.randomUUID(), token.id,
      claims.email || 'unknown',
      token.status === 'active' ? 'verified' : 'revoked']);
@@ -93,7 +94,8 @@ async function liveVerify(req, res, body) {
   // Rate limit check
   if (!verifyLimiter(req, res, claims)) return;
 
-  const { authenx_code } = body;
+  const { authenx_code, force_live_data } = body || {};
+  const forceLiveData = force_live_data === true;
   if (!authenx_code) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: 'authenx_code is required' }));
@@ -109,10 +111,10 @@ async function liveVerify(req, res, body) {
   }
 
   // Step 2: Fetch token and college info
-  const token = queryOne(`
-    SELECT t.*, c.connector_url, c.public_key_hex, c.shared_secret, c.name as college_name
+  const token = await queryOne(`
+    SELECT t.*, c.connector_url, c.public_key_hex, c.shared_secret, c.name as college_name, c.short_code as college_short_code
     FROM verification_tokens t JOIN colleges c ON c.id = t.college_id
-    WHERE t.id = ?
+    WHERE t.id = $1
   `, [codePayload.token_id]);
 
   if (!token) {
@@ -123,9 +125,9 @@ async function liveVerify(req, res, body) {
   // Fast path: revoked tokens don't need live connector check
   if (token.status === 'revoked') {
     const latency = Date.now() - start;
-    run(`INSERT INTO verification_requests
+    await run(`INSERT INTO verification_requests
          (id, token_id, employer_name, request_type, result, latency_ms)
-         VALUES (?, ?, ?, 'live_verify', 'revoked', ?)`,
+         VALUES ($1, $2, $3, 'live_verify', 'revoked', $4)`,
       [crypto.randomUUID(), token.id, claims.email, latency]);
 
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -140,7 +142,7 @@ async function liveVerify(req, res, body) {
 
   // Cache check — avoid hitting connector for recent identical verifications
   const cached = verificationCache.get(token.id);
-  if (cached) {
+  if (cached && !forceLiveData) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ...cached, latency_ms: Date.now() - start }));
   }
@@ -153,10 +155,11 @@ async function liveVerify(req, res, body) {
   try {
     connectorData = await callWithBreaker(token.college_id, () =>
       callConnector(
-        token.connector_url, 
+        token.connector_url,
         { student_ref_token: token.student_ref_token, nonce },
         token.college_id,
-        token.shared_secret
+        token.shared_secret,
+        token.college_short_code
       )
     );
   } catch (err) {
@@ -165,9 +168,9 @@ async function liveVerify(req, res, body) {
     const isSigValid = verifyEd25519(token.canonical_hash, token.issuance_signature, token.public_key_hex);
     const latency    = Date.now() - start;
 
-    run(`INSERT INTO verification_requests
+    await run(`INSERT INTO verification_requests
          (id, token_id, employer_name, request_type, result, hash_match, sig_valid, latency_ms, nonce)
-         VALUES (?, ?, ?, 'live_verify', ?, 1, ?, ?, ?)`,
+         VALUES ($1, $2, $3, 'live_verify', $4, 1, $5, $6, $7)`,
       [crypto.randomUUID(), token.id, claims.email,
        token.status === 'active' ? 'verified' : 'error',
        isSigValid ? 1 : 0, latency, nonce]);
@@ -182,6 +185,8 @@ async function liveVerify(req, res, body) {
       not_revoked: token.status === 'active',
       latency_ms: latency,
       live_data: null,
+      data_source: 'registry_cache',
+      lookup_path: 'AuthenXCode -> verification_tokens.id -> stored issuance proof',
       note: 'College connector temporarily unavailable. Showing stored credential proof only.',
       connector_error: err.message,
     }));
@@ -218,20 +223,20 @@ async function liveVerify(req, res, body) {
   const latency = Date.now() - start;
 
   // Audit log (NEVER stores student PII — only cryptographic metadata)
-  run(`INSERT INTO verification_requests
+  await run(`INSERT INTO verification_requests
        (id, token_id, employer_name, request_type, result, hash_match, sig_valid, latency_ms, nonce)
-       VALUES (?, ?, ?, 'live_verify', ?, ?, ?, ?, ?)`,
+       VALUES ($1, $2, $3, 'live_verify', $4, $5, $6, $7, $8)`,
     [crypto.randomUUID(), token.id, claims.email, result,
      hashMatch ? 1 : 0, (isSigValid && liveSigValid) ? 1 : 0, latency, nonce]);
 
   // Update token verification stats
   try {
-    run(`UPDATE verification_tokens
+    await run(`UPDATE verification_tokens
          SET verification_count = verification_count + 1,
-             last_verified_at   = datetime('now'),
-             last_result        = ?
-         WHERE id = ?`, [result, token.id]);
-  } catch {} // Non-critical; new columns may not exist on older DBs
+             last_verified_at   = NOW(),
+             last_result        = $1
+         WHERE id = $2`, [result, token.id]);
+  } catch {} // Non-critical
 
   const responseBody = {
     result,
@@ -249,7 +254,10 @@ async function liveVerify(req, res, body) {
       credential_type: connectorData.credential_type,
       cgpa:            connectorData.cgpa,
       graduation_year: connectorData.graduation_year,
+      issue_date:      connectorData.issue_date || '',
     } : null,
+    data_source: connectorData.source || 'connector_live',
+    lookup_path: connectorData.lookup_path || 'AuthenXCode -> verification_tokens.id -> student_ref_token -> connector /verify',
     note: 'live_data is fetched directly from the college ERP and never stored in AuthenX',
   };
 
@@ -266,49 +274,94 @@ async function liveVerify(req, res, body) {
  * Call a college connector's /verify endpoint.
  * Supports both HTTP and HTTPS, with 8-second timeout.
  */
-async function callConnector(connectorUrl, payload, collegeId, sharedSecret) {
+async function callConnector(connectorUrl, payload, collegeId, sharedSecret, collegeShortCode) {
   // Built-in mock connector
   if (!connectorUrl || connectorUrl === 'mock' || connectorUrl.startsWith('internal://')) {
-    return mockConnectorVerify(payload);
+    return mockConnectorVerify(payload, { collegeId });
   }
 
   const url  = new URL('/verify', connectorUrl);
   const body = JSON.stringify(payload);
-  
+
   // Generate Zero-Trust HMAC headers
   const hmacHeaders = signRequest('POST', url.pathname, body, sharedSecret, collegeId);
 
-  return new Promise((resolve, reject) => {
-    const mod = url.protocol === 'https:' ? require('node:https') : require('node:http');
-    const reqOpts = {
-      hostname: url.hostname,
-      port:     url.port || (url.protocol === 'https:' ? 443 : 80),
-      path:     url.pathname,
-      method:   'POST',
-      headers:  {
-        'Content-Type':   'application/json',
-        'Content-Length': Buffer.byteLength(body),
-        ...hmacHeaders
-      },
-    };
+  try {
+    return await new Promise((resolve, reject) => {
+      const mod = url.protocol === 'https:' ? require('node:https') : require('node:http');
+      const reqOpts = {
+        hostname: url.hostname,
+        port:     url.port || (url.protocol === 'https:' ? 443 : 80),
+        path:     url.pathname,
+        method:   'POST',
+        headers:  {
+          'Content-Type':   'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          ...hmacHeaders
+        },
+      };
 
-    const request = mod.request(reqOpts, (response) => {
+      const request = mod.request(reqOpts, (response) => {
+        let data = '';
+        response.on('data', chunk => data += chunk);
+        response.on('end', () => {
+          if (response.statusCode === 404) return reject(new Error('Student not found at connector'));
+          if (response.statusCode >= 400) return reject(new Error(`Connector error ${response.statusCode}`));
+          try { resolve(JSON.parse(data)); }
+          catch { reject(new Error('Invalid JSON from connector')); }
+        });
+      });
+
+      request.on('error', reject);
+      request.setTimeout(8000, () => {
+        request.destroy();
+        reject(new Error('Connector request timed out after 8 seconds'));
+      });
+
+      request.write(body);
+      request.end();
+    });
+  } catch (err) {
+    if (isCvrCollege(collegeId, collegeShortCode)) {
+      return mockConnectorVerify(payload, { collegeId, fallbackReason: err.message });
+    }
+    throw err;
+  }
+}
+
+async function signWithHsm(collegeId, payload) {
+  const hsmPort = parseInt(process.env.HSM_PORT || '9099', 10);
+  const body = JSON.stringify({ college_id: collegeId, payload });
+  return new Promise((resolve, reject) => {
+    const request = require('node:http').request({
+      hostname: '127.0.0.1',
+      port: hsmPort,
+      path: '/sign',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(body),
+      },
+    }, (response) => {
       let data = '';
       response.on('data', chunk => data += chunk);
       response.on('end', () => {
-        if (response.statusCode === 404) return reject(new Error('Student not found at connector'));
-        if (response.statusCode >= 400) return reject(new Error(`Connector error ${response.statusCode}`));
-        try { resolve(JSON.parse(data)); }
-        catch { reject(new Error('Invalid JSON from connector')); }
+        try {
+          const parsed = JSON.parse(data || '{}');
+          if (response.statusCode !== 200 || !parsed.signature) {
+            return reject(new Error(parsed.error || `HSM sign failed (${response.statusCode})`));
+          }
+          resolve(Buffer.from(parsed.signature, 'hex').toString('base64'));
+        } catch {
+          reject(new Error('Invalid HSM response'));
+        }
       });
     });
 
     request.on('error', reject);
-    request.setTimeout(8000, () => {
-      request.destroy();
-      reject(new Error('Connector request timed out after 8 seconds'));
+    request.setTimeout(5000, () => {
+      request.destroy(new Error('HSM sign timeout'));
     });
-
     request.write(body);
     request.end();
   });
@@ -338,8 +391,9 @@ async function fetchLedgerPublicKey(collegeId) {
 }
 
 /** Built-in mock connector for demo/testing */
-function mockConnectorVerify({ student_ref_token, nonce }) {
+async function mockConnectorVerify({ student_ref_token, nonce }, ctx = {}) {
   const { signEd25519, sha256: sha256fn, buildCanonicalJson: buildCJ } = require('../crypto/index.js');
+  const { collegeId = null, fallbackReason = null } = ctx;
 
   const MOCK_STUDENTS = {
     'stu_ref_001': { name: 'SUPREETH K',    degree: 'BTECH', branch: 'COMPUTER SCIENCE',  credential_type: 'DEGREE_CERTIFICATE', cgpa: '8.9', graduation_year: '2024', issue_date: '2024-06-15', schema_version: '1.0' },
@@ -349,18 +403,66 @@ function mockConnectorVerify({ student_ref_token, nonce }) {
     'stu_ref_005': { name: 'DEEPA MENON',   degree: 'MBA',   branch: 'FINANCE',           credential_type: 'DEGREE_CERTIFICATE', cgpa: '8.7', graduation_year: '2023', issue_date: '2023-12-01', schema_version: '1.0' },
   };
 
-  const student = MOCK_STUDENTS[student_ref_token];
+  let student = null;
+  let source = 'mock_memory';
+  let sourceTable = 'verify.js:MOCK_STUDENTS';
+
+  if (collegeId) {
+    try {
+      const centralStudent = await lookupCentralStudent(collegeId, student_ref_token);
+      if (centralStudent) {
+        console.log(`[verify] data source for ${student_ref_token}: central_postgres.erp.students`);
+        student = {
+          name: centralStudent.full_name,
+          degree: centralStudent.degree,
+          branch: centralStudent.dept_name,
+          credential_type: centralStudent.credential_type || 'DEGREE_CERTIFICATE',
+          cgpa: String(centralStudent.cgpa),
+          graduation_year: centralStudent.grad_year,
+          issue_date: centralStudent.issue_date,
+          schema_version: '1.0',
+        };
+        source = 'central_postgres_erp_students';
+        sourceTable = 'erp.students';
+      }
+    } catch (err) {
+      // If PostgreSQL is unavailable, fall back to in-memory mock data.
+      console.log(`[verify] central postgres unavailable for ${student_ref_token}; falling back to hardcoded mock data (${err.message})`);
+    }
+  }
+
+  if (!student) {
+    student = MOCK_STUDENTS[student_ref_token];
+    if (student) {
+      console.log(`[verify] data source for ${student_ref_token}: verify.js hardcoded MOCK_STUDENTS`);
+    }
+  }
+
   if (!student) throw new Error(`Student not found in mock ERP: ${student_ref_token}`);
 
-  const token     = queryOne('SELECT college_id FROM verification_tokens WHERE student_ref_token = ?', [student_ref_token]);
-  const issuer_id = token ? token.college_id : 'mock-college';
+  const token = collegeId
+    ? await queryOne('SELECT college_id FROM verification_tokens WHERE college_id = $1 AND student_ref_token = $2', [collegeId, student_ref_token])
+    : await queryOne('SELECT college_id FROM verification_tokens WHERE student_ref_token = $1', [student_ref_token]);
+  const issuer_id = token ? token.college_id : (collegeId || 'mock-college');
   const canonical = buildCJ({ ...student, issuer_id, student_ref_token });
   const liveHash  = sha256fn(canonical);
 
-  const mockPrivKey = process.env.MOCK_CONNECTOR_PRIV_KEY;
-  const live_signature = mockPrivKey ? signEd25519(nonce + ':' + liveHash, mockPrivKey) : null;
+  let live_signature = null;
+  try {
+    live_signature = await signWithHsm(issuer_id, nonce + ':' + liveHash);
+  } catch {
+    const mockPrivKey = process.env.MOCK_CONNECTOR_PRIV_KEY;
+    live_signature = mockPrivKey ? signEd25519(nonce + ':' + liveHash, mockPrivKey) : null;
+  }
 
-  return Promise.resolve({ ...student, live_signature });
+  return {
+    ...student,
+    live_signature,
+    source,
+    source_table: sourceTable,
+    lookup_path: `AuthenXCode -> verification_tokens.id -> student_ref_token -> ${sourceTable}`,
+    connector_fallback_reason: fallbackReason,
+  };
 }
 
 module.exports = { decodeCode, liveVerify };

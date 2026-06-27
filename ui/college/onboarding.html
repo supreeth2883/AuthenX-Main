@@ -66,15 +66,7 @@
           <div class="card-title" style="margin-bottom:4px">ERP Database Type</div>
           <div class="card-sub" style="margin-bottom:20px">Select how the connector will access your student records</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" id="db-grid">
-            <div class="db-card selected" data-db="sqlite" onclick="selectDb('sqlite',this)">
-              <span class="db-icon">📄</span>
-              <div><div class="db-label">SQLite</div><div class="db-sub">Local file-based DB</div></div>
-            </div>
-            <div class="db-card" data-db="mysql" onclick="selectDb('mysql',this)">
-              <span class="db-icon">🐬</span>
-              <div><div class="db-label">MySQL / MariaDB</div><div class="db-sub">Port 3306</div></div>
-            </div>
-            <div class="db-card" data-db="postgres" onclick="selectDb('postgres',this)">
+            <div class="db-card selected" data-db="postgres" onclick="selectDb('postgres',this)">
               <span class="db-icon">🐘</span>
               <div><div class="db-label">PostgreSQL</div><div class="db-sub">Port 5432</div></div>
             </div>
@@ -224,7 +216,7 @@ node connector.js</div>
           </div>
 
           <div style="background:var(--ax-bg);border-radius:8px;padding:14px;font-size:12px;color:var(--ax-muted);margin-bottom:20px">
-            You can configure a custom policy with per-role visibility and approval workflows in <a href="/college/disclosure-policy.html" style="color:var(--ax-blue)">Disclosure Policy Settings</a>.
+            You can configure a custom policy with per-role visibility and approval workflows in <a href="disclosure-policy.html" style="color:var(--ax-blue)">Disclosure Policy Settings</a>.
           </div>
 
           <div style="display:flex;justify-content:space-between">
@@ -241,7 +233,7 @@ node connector.js</div>
   </div>
 </div>
 
-<script src="/college/app.js"></script>
+<script src="app.js"></script>
 <script>
 if (!Flow.guard('onboarding')) {}
 document.getElementById('sidebar-mount').innerHTML = renderSidebar('onboarding');
@@ -249,16 +241,13 @@ initNav('onboarding');
 
 const STEPS = ['College Info', 'ERP Type', 'Connection', 'Field Mapping', 'Test', 'Key Mgmt', 'Policy'];
 let currentStep = 1;
-let selectedDb = 'sqlite';
+let selectedDb = 'postgres';
 
 const CANONICAL_FIELDS = ['name', 'degree', 'branch', 'cgpa', 'graduation_year', 'issue_date', 'credential_type'];
 
 function collectConnectorConfig() {
   const cfg = { db_type: selectedDb, connection: {}, created_from_ui: true };
-  if (selectedDb === 'sqlite') {
-    cfg.connection.sqlite_path = document.getElementById('c-sqlite')?.value || '';
-    cfg.connection.table = document.getElementById('c-table')?.value || '';
-  } else if (selectedDb === 'rest') {
+  if (selectedDb === 'rest') {
     cfg.connection.api_base_url = document.getElementById('c-url')?.value || '';
     cfg.connection.auth_header = document.getElementById('c-header')?.value || '';
   } else {
@@ -346,23 +335,7 @@ function renderConnFields() {
     (document.getElementById('c-connector-url')?.value) ||
     (localStorage.getItem('ax_connector_url') || '');
 
-  if (selectedDb === 'sqlite') {
-    cont.innerHTML = `
-      <div class="form-group">
-        <label>Connector Base URL</label>
-        <input type="text" id="c-connector-url" placeholder="http://localhost:9001" value="${connectorUrlPrefill}" style="font-family:monospace">
-        <div style="margin-top:6px;font-size:11px;color:var(--ax-subtle)">Where your college connector is reachable from the AuthenX server</div>
-      </div>
-      <div class="form-group">
-        <label>SQLite File Path</label>
-        <input type="text" id="c-sqlite" placeholder="/data/students.db" style="font-family:monospace">
-        <div style="margin-top:6px;font-size:11px;color:var(--ax-subtle)">Absolute path to the SQLite database file on the connector host</div>
-      </div>
-      <div class="form-group">
-        <label>Students Table Name</label>
-        <input type="text" id="c-table" placeholder="students">
-      </div>`;
-  } else if (selectedDb === 'rest') {
+  if (selectedDb === 'rest') {
     cont.innerHTML = `
       <div class="form-group">
         <label>Connector Base URL</label>
@@ -401,9 +374,7 @@ function renderConnFields() {
 
 function renderFieldMapping() {
   const cont = document.getElementById('field-mapping-rows');
-  const erpCols = selectedDb === 'sqlite'
-    ? ['roll_no', 'full_name', 'dept', 'programme', 'sgpa', 'grad_year', 'issue_date', 'degree_type']
-    : ['student_id', 'student_name', 'department', 'program', 'cgpa', 'graduation_year', 'issue_date', 'degree'];
+  const erpCols = ['student_id', 'student_name', 'department', 'program', 'cgpa', 'graduation_year', 'issue_date', 'degree'];
 
   cont.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:8px">
@@ -440,7 +411,15 @@ async function testConnection() {
     }
   } catch (err) {
     resultEl.className = 'health-result health-fail';
-    resultEl.innerHTML = `✕ Connection failed: ${err.message}<br><span style="font-size:12px;margin-top:6px;display:block">Start the connector: <code>cd authenx-connector && node connector.js</code></span>`;
+    resultEl.textContent = '';
+    const errLine = document.createElement('span');
+    errLine.textContent = '✕ Connection failed: ' + err.message;
+    const hint = document.createElement('span');
+    hint.style.cssText = 'font-size:12px;margin-top:6px;display:block';
+    hint.textContent = 'Start the connector: cd authenx-connector && node connector.js';
+    resultEl.appendChild(errLine);
+    resultEl.appendChild(document.createElement('br'));
+    resultEl.appendChild(hint);
     resultEl.style.display = '';
   } finally {
     btn.disabled = false;
@@ -487,7 +466,7 @@ function completeSetup() {
       await persistProgress({ onboarding_completed: 1 });
       localStorage.setItem('ax_onboarded', '1');
       toast('Setup complete! Connector config saved to backend + DB.', 'success');
-      setTimeout(() => window.location.href = '/college/connector-management.html', 1200);
+      setTimeout(() => window.location.href = 'connector-management.html', 1200);
     } catch (e) {
       toast('Could not save setup: ' + e.message, 'error', 6000);
     }

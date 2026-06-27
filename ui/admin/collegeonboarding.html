@@ -113,9 +113,41 @@
   .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .hidden { display: none !important; }
+
+  /* Login gate */
+  .auth-shell { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .auth-card { width: 100%; max-width: 420px; background: #fff; border: 1px solid var(--ax-border); border-radius: 12px; padding: 28px; box-shadow: 0 8px 28px rgba(26,31,54,0.12); }
+  .auth-title { font-size: 22px; font-weight: 800; color: var(--ax-primary); margin-bottom: 4px; }
+  .auth-sub { color: var(--ax-muted); font-size: 13px; margin-bottom: 18px; }
+  .auth-error { display: none; margin-bottom: 14px; padding: 10px 12px; border-radius: 8px; border: 1px solid #f5a9b8; background: #ffe0e6; color: #c0132e; font-size: 13px; }
+  .auth-btn { width: 100%; justify-content: center; }
 </style>
 </head>
 <body>
+
+<div id="auth-shell" class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-title">AuthenX Admin Login</div>
+    <div class="auth-sub">Sign in with a valid super admin account to access college onboarding.</div>
+    <div id="auth-error" class="auth-error"></div>
+    <form id="auth-form" autocomplete="off">
+      <div class="form-group">
+        <label>Email</label>
+        <input type="email" id="auth-email" name="auth_email_input" value="" autocomplete="off" autocapitalize="off" spellcheck="false" required />
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input type="password" id="auth-password" name="auth_password_input" placeholder="Enter password" autocomplete="new-password" required />
+      </div>
+      <button type="submit" class="btn btn-primary auth-btn" id="auth-submit-btn">
+        <span id="auth-submit-text">Login</span>
+        <span id="auth-submit-spinner" class="spinner hidden"></span>
+      </button>
+    </form>
+  </div>
+</div>
+
+<div id="app-shell" class="hidden">
 
 <div class="header">
   <div class="logo">Authen<span>X</span></div>
@@ -123,6 +155,12 @@
 </div>
 
 <div class="container">
+  <div class="card" style="padding:14px 18px;margin-bottom:18px;background:#eef1ff;border-color:#d9dfff;">
+    <div style="font-size:12px;font-weight:700;color:#4458c0;letter-spacing:.03em;text-transform:uppercase;margin-bottom:6px;">Super Admin credential (backend)</div>
+    <div style="font-size:13px;color:#1a1f36;">Email: <b>admin@authenx.in</b> | Password: <b>Admin@123</b>
+      <span style="margin-left:12px;color:#697386;font-size:12px;">— make sure backend stack is running (API auto-detected)</span>
+    </div>
+  </div>
 
   <!-- Stepper -->
   <div class="stepper">
@@ -176,20 +214,10 @@
       <div class="card-title">Select Database Type</div>
       <div class="card-sub">Choose the type of database or system the college ERP uses. AuthenX connector adapts to each type automatically — no code changes needed.</div>
       <div class="db-grid">
-        <div class="db-card" onclick="selectDb('sqlite')" id="db-sqlite">
-          <div class="db-icon">📁</div>
-          <div class="db-label">SQLite</div>
-          <div class="db-hint">Demo / Pilot</div>
-        </div>
-        <div class="db-card" onclick="selectDb('mysql')" id="db-mysql">
-          <div class="db-icon">🐬</div>
-          <div class="db-label">MySQL</div>
-          <div class="db-hint">Most common</div>
-        </div>
         <div class="db-card" onclick="selectDb('postgres')" id="db-postgres">
           <div class="db-icon">🐘</div>
           <div class="db-label">PostgreSQL</div>
-          <div class="db-hint">Modern ERPs</div>
+          <div class="db-hint">Required</div>
         </div>
         <div class="db-card" onclick="selectDb('mssql')" id="db-mssql">
           <div class="db-icon">🪟</div>
@@ -204,30 +232,7 @@
       </div>
 
       <!-- DB-specific fields -->
-      <div id="db-fields-sqlite">
-        <div class="form-group">
-          <label>SQLite File Path</label>
-          <input type="text" id="sqlite_path" value="./connector.db" placeholder="./connector.db" />
-          <span class="hint">Path relative to the connector directory on the college server</span>
-        </div>
-      </div>
-
-      <div id="db-fields-mysql" class="hidden">
-        <div class="form-row">
-          <div class="form-group"><label>Host <span class="req">*</span></label><input type="text" id="mysql_host" value="127.0.0.1" /></div>
-          <div class="form-group"><label>Port</label><input type="number" id="mysql_port" value="3306" /></div>
-        </div>
-        <div class="form-row">
-          <div class="form-group"><label>Database Name <span class="req">*</span></label><input type="text" id="mysql_database" placeholder="college_erp" /></div>
-          <div class="form-group"><label>Username <span class="req">*</span></label><input type="text" id="mysql_user" placeholder="authenx_readonly" /></div>
-        </div>
-        <div class="form-group"><label>Password <span class="req">*</span></label><input type="password" id="mysql_password" placeholder="••••••••" /></div>
-        <div class="hint" style="margin-top:-8px;margin-bottom:16px">⚠️ Create a READ-ONLY MySQL user. AuthenX never writes to your database.</div>
-        <div class="form-group"><label>Install MySQL driver on connector server:</label>
-          <input type="text" value="cd authenx-connector && npm install mysql2" readonly style="background:#f6f9fc;font-family:monospace;color:#5469d4;" /></div>
-      </div>
-
-      <div id="db-fields-postgres" class="hidden">
+      <div id="db-fields-postgres">
         <div class="form-row">
           <div class="form-group"><label>Host <span class="req">*</span></label><input type="text" id="pg_host" value="127.0.0.1" /></div>
           <div class="form-group"><label>Port</label><input type="number" id="pg_port" value="5432" /></div>
@@ -434,12 +439,163 @@
   </div>
 
 </div><!-- /container -->
+</div><!-- /app-shell -->
 
+<script src="../shared/offline-auth.js"></script>
 <script>
-const API = 'http://localhost:3000';
-let selectedDb = 'sqlite';
+const API_CANDIDATES = [
+  localStorage.getItem('authenx_api_base'),
+  'http://127.0.0.1:3001',
+  'http://localhost:3001',
+  'http://127.0.0.1:3002',
+  'http://localhost:3002',
+  'http://127.0.0.1:3100',
+  'http://localhost:3100',
+  'http://127.0.0.1:3200',
+  'http://localhost:3200',
+  'http://127.0.0.1:3300',
+  'http://localhost:3300',
+  'http://127.0.0.1:3000',
+  'http://localhost:3000',
+].filter((v, i, arr) => v && arr.indexOf(v) === i);
+
+let API = API_CANDIDATES[0] || 'http://127.0.0.1:3001';
+let apiResolved = false;
+let selectedDb = 'postgres';
 let onboardedCollege = null;
 let jwt = localStorage.getItem('authenx_token');
+
+function clearAuthSession() {
+  jwt = null;
+  localStorage.removeItem('authenx_token');
+  localStorage.removeItem('authenx_user');
+}
+
+async function detectApiBase() {
+  if (apiResolved) return API;
+
+  for (const base of API_CANDIDATES) {
+    try {
+      const r = await fetch(`${base}/health`);
+      const text = await r.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch {}
+
+      if (r.ok && data && data.status === 'ok') {
+        API = base;
+        localStorage.setItem('authenx_api_base', API);
+        apiResolved = true;
+        return API;
+      }
+    } catch {}
+  }
+
+  apiResolved = true;
+  return API;
+}
+
+async function loginAcrossCandidates(email, password) {
+  const candidates = [API, ...API_CANDIDATES.filter(base => base !== API)];
+  let lastError = 'Invalid credentials';
+
+  for (const base of candidates) {
+    try {
+      const r = await fetch(`${base}/v1/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+
+      let data = {};
+      try { data = await r.json(); } catch {}
+
+      if (r.ok && data.token) {
+        API = base;
+        localStorage.setItem('authenx_api_base', API);
+        return { ok: true, token: data.token, user: data.user || null };
+      }
+
+      if (data && data.error) lastError = data.error;
+    } catch {
+      // Ignore unreachable candidates and continue probing.
+    }
+  }
+
+  return { ok: false, error: lastError };
+}
+
+function showAuthError(message) {
+  const err = document.getElementById('auth-error');
+  err.textContent = message;
+  err.style.display = 'block';
+}
+
+function clearAuthError() {
+  const err = document.getElementById('auth-error');
+  err.style.display = 'none';
+  err.textContent = '';
+}
+
+async function handleLoginSubmit(e) {
+  e.preventDefault();
+
+  const submitBtn = document.getElementById('auth-submit-btn');
+  const submitText = document.getElementById('auth-submit-text');
+  const submitSpinner = document.getElementById('auth-submit-spinner');
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+
+  clearAuthError();
+  submitBtn.disabled = true;
+  submitText.textContent = 'Logging in...';
+  submitSpinner.classList.remove('hidden');
+
+  await detectApiBase();
+
+  try {
+    const result = await loginAcrossCandidates(email, password);
+    if (!result.ok) {
+      showAuthError(result.error || 'Invalid credentials');
+      return;
+    }
+
+    const role = result.user && result.user.role;
+    if (role && role !== 'super_admin') {
+      clearAuthSession();
+      showAuthError('Only super_admin can access college onboarding.');
+      return;
+    }
+
+    jwt = result.token;
+    localStorage.setItem('authenx_token', jwt);
+
+    document.getElementById('auth-shell').classList.add('hidden');
+    document.getElementById('app-shell').classList.remove('hidden');
+    window.scrollTo(0, 0);
+  } catch {
+    showAuthError(`Unable to reach AuthenX backend at ${API}. Start backend stack and try again.`);
+  } finally {
+    submitBtn.disabled = false;
+    submitText.textContent = 'Login';
+    submitSpinner.classList.add('hidden');
+  }
+}
+
+function initAuthGate() {
+  clearAuthSession();
+  const emailInput = document.getElementById('auth-email');
+  const passwordInput = document.getElementById('auth-password');
+  emailInput.value = '';
+  passwordInput.value = '';
+  // Clear any browser-restored values after initial paint as well.
+  setTimeout(() => {
+    emailInput.value = '';
+    passwordInput.value = '';
+  }, 0);
+  document.getElementById('auth-form').addEventListener('submit', handleLoginSubmit);
+}
+
+initAuthGate();
 
 // ─── Step navigation ──────────────────────────────────────────────────────────
 function goToStep(n) {
@@ -478,7 +634,7 @@ function selectDb(type) {
   selectedDb = type;
   document.querySelectorAll('.db-card').forEach(c => c.classList.remove('selected'));
   document.getElementById(`db-${type}`).classList.add('selected');
-  ['sqlite','mysql','postgres','mssql','api'].forEach(t => {
+  ['postgres','mssql','api'].forEach(t => {
     document.getElementById(`db-fields-${t}`).classList.toggle('hidden', t !== type);
   });
   const tableConf = document.getElementById('db-table-config');
@@ -491,10 +647,8 @@ function renderConnectionSummary() {
     `College: <b>${val('college_name')}</b>`,
     `DB Type: <b>${selectedDb.toUpperCase()}</b>`,
   ];
-  if (selectedDb === 'mysql') lines.push(`Host: <b>${val('mysql_host')}:${val('mysql_port')}</b>`, `Database: <b>${val('mysql_database')}</b>`);
   if (selectedDb === 'postgres') lines.push(`Host: <b>${val('pg_host')}:${val('pg_port')}</b>`, `Database: <b>${val('pg_database')}.${val('pg_schema')}</b>`);
   if (selectedDb === 'mssql') lines.push(`Server: <b>${val('mssql_host')}</b>`, `Database: <b>${val('mssql_database')}</b>`);
-  if (selectedDb === 'sqlite') lines.push(`Path: <b>${val('sqlite_path')}</b>`);
   if (selectedDb === 'api') lines.push(`Base URL: <b>${val('api_base_url')}</b>`, `Endpoint: <b>${val('api_endpoint')}</b>`);
   if (selectedDb !== 'api') lines.push(`Table: <b>${val('db_table')}</b>`, `Ref Column: <b>${val('db_ref_column')}</b>`);
   document.getElementById('conn-summary-text').innerHTML = lines.join('<br>');
@@ -527,7 +681,7 @@ async function testConnection() {
 
     // Try to call the actual connector if URL is set
     const connUrl = val('connector_url');
-    if (connUrl && connUrl !== 'http://localhost:9000') {
+    if (connUrl && connUrl !== 'http://localhost:9000' && connUrl !== 'http://127.0.0.1:9000') {
       const r = await fetch(`${connUrl}/health`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
       if (r && r.ok) {
         const data = await r.json();
@@ -556,8 +710,6 @@ function showResult(el, ok, msg) {
 function buildDbConfig() {
   const type = selectedDb;
   const base = { db_type: type };
-  if (type === 'sqlite')   base.db = { path: val('sqlite_path'), table: val('db_table'), ref_column: val('db_ref_column') };
-  if (type === 'mysql')    base.db = { host: val('mysql_host'), port: +val('mysql_port'), user: val('mysql_user'), password: val('mysql_password'), database: val('mysql_database'), table: val('db_table'), ref_column: val('db_ref_column') };
   if (type === 'postgres') base.db = { host: val('pg_host'), port: +val('pg_port'), user: val('pg_user'), password: val('pg_password'), database: val('pg_database'), schema: val('pg_schema') || 'public', table: val('db_table'), ref_column: val('db_ref_column') };
   if (type === 'mssql')    base.db = { host: val('mssql_host'), port: +val('mssql_port'), user: val('mssql_user'), password: val('mssql_password'), database: val('mssql_database'), schema: val('mssql_schema') || 'dbo', table: val('db_table'), ref_column: val('db_ref_column') };
   if (type === 'api')      base.api = { base_url: val('api_base_url'), endpoint: val('api_endpoint'), method: val('api_method'), auth_type: val('api_auth_type'), auth_token: val('api_token') };
@@ -612,8 +764,30 @@ function buildConfigPreview() {
   document.getElementById('config-preview').textContent = JSON.stringify(cfg, null, 2);
 }
 
+// ─── Error banner ──────────────────────────────────────────────────────────────
+function showError(msg) {
+  let banner = document.getElementById('error-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'error-banner';
+    banner.style.cssText = 'background:#ffe0e6;border:1px solid #f5a9b8;color:#c0132e;padding:14px 18px;' +
+      'border-radius:8px;font-size:14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;';
+    document.querySelector('.container').prepend(banner);
+  }
+  banner.innerHTML = `<span>⚠ ${msg}</span><button onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;font-size:18px;color:#c0132e;">×</button>`;
+  banner.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 // ─── Save college ──────────────────────────────────────────────────────────────
 async function saveCollege() {
+  await detectApiBase();
+  if (!jwt) {
+    showError('Please login as super_admin before registering a college.');
+    document.getElementById('app-shell').classList.add('hidden');
+    document.getElementById('auth-shell').classList.remove('hidden');
+    return;
+  }
+
   const btn  = document.getElementById('save-btn');
   const txt  = document.getElementById('save-btn-text');
   const spin = document.getElementById('save-btn-spinner');
@@ -634,22 +808,17 @@ async function saveCollege() {
       body: JSON.stringify(payload),
     });
     const data = await r.json();
-    if (!r.ok) throw new Error(data.error || 'Failed to register college');
+    if (r.status === 401 && /JWT|Authorization|signature|expired/i.test(data.error || '')) {
+      clearAuthSession();
+      document.getElementById('app-shell').classList.add('hidden');
+      document.getElementById('auth-shell').classList.remove('hidden');
+      throw new Error('Session expired. Please login again.');
+    }
+    if (!r.ok) throw new Error(data.error || `Server error (${r.status})`);
     onboardedCollege = data;
     showSuccess(data);
   } catch (e) {
-    // Demo fallback — show mock success
-    const mockData = {
-      college_id:   'clg_' + Math.random().toString(36).slice(2, 10),
-      college_name: val('college_name'),
-      short_code:   val('college_code').toUpperCase(),
-      admin_email:  val('admin_email'),
-      connector_url: val('connector_url'),
-      public_key_hex: 'd2d99e7bc2a2212cf0cf5f1bdd0f2be7072623c8d09c036a09baf77c966e6a73',
-      admin_temp_password: 'College@' + Math.floor(1000 + Math.random() * 9000),
-    };
-    onboardedCollege = mockData;
-    showSuccess(mockData);
+    showError(e.message || `Failed to reach the AuthenX server at ${API}.`);
   } finally {
     btn.disabled = false; txt.textContent = '✓ Register College'; spin.classList.add('hidden');
   }
@@ -679,7 +848,7 @@ function downloadPackage() {
     README: 'AuthenX Connector Package. Place in authenx-connector/ and run: node universal-connector.js',
     'college-config.json': cfg,
     '.env': `COLLEGE_ID=${onboardedCollege.college_id}\nCOLLEGE_NAME=${onboardedCollege.college_name}\nPORT=${val('connector_port') || 9000}\n`,
-    install_steps: ['1. Copy connector files to college server', '2. Place college-config.json in authenx-connector/', '3. Copy .env to authenx-connector/', selectedDb === 'mysql' ? '4. npm install mysql2' : selectedDb === 'postgres' ? '4. npm install pg' : selectedDb === 'mssql' ? '4. npm install mssql' : '4. No extra packages needed', '5. node universal-connector.js', '6. Test: curl http://localhost:9000/health'],
+    install_steps: ['1. Copy connector files to college server', '2. Place college-config.json in authenx-connector/', '3. Copy .env to authenx-connector/', selectedDb === 'postgres' ? '4. npm install pg' : selectedDb === 'mssql' ? '4. npm install mssql' : '4. No extra packages needed', '5. node universal-connector.js', '6. Test: curl http://localhost:9000/health'],
   };
   const blob = new Blob([JSON.stringify(pkg, null, 2)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -689,8 +858,8 @@ function downloadPackage() {
 // ─── Utils ────────────────────────────────────────────────────────────────────
 function val(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
 
-// Pre-select SQLite on load
-selectDb('sqlite');
+// Pre-select PostgreSQL on load
+selectDb('postgres');
 </script>
 </body>
 </html>

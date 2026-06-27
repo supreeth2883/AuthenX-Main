@@ -86,7 +86,7 @@
     </button>
 
     <div style="margin-top:12px;text-align:center">
-      <a href="/employer/verify.html" style="font-size:12px;color:var(--ax-gray-400)">← Back to paste code</a>
+      <a href="verify.html" style="font-size:12px;color:var(--ax-gray-400)">← Back to paste code</a>
     </div>
   </div>
 
@@ -105,7 +105,7 @@
       </div>
     </div>
     <div id="revoked-reason" style="display:none;margin-top:12px;font-size:12px;color:var(--ax-gray-500)"></div>
-    <button class="btn btn-secondary btn-lg" onclick="window.location.href = '/employer/verify.html'" style="width:100%;justify-content:center;margin-top:20px">
+    <button class="btn btn-secondary btn-lg" onclick="window.location.href = 'verify.html'" style="width:100%;justify-content:center;margin-top:20px">
       Verify Another Credential
     </button>
   </div>
@@ -113,7 +113,7 @@
 
 <div id="toast-container" class="toast-container"></div>
 
-<script src="/employer/verify.js"></script>
+<script src="verify.js"></script>
 <script>
 if (!Auth.requireAuth()) {}
 document.getElementById('navbar').innerHTML = renderNavbar('decoding');
@@ -123,7 +123,7 @@ const code = sessionStorage.getItem('verify_code');
 const decodeRaw = sessionStorage.getItem('verify_decode');
 
 if (!code || !decodeRaw) {
-  window.location.href = '/employer/verify.html';
+  window.location.href = 'verify.html';
 }
 
 const decodeData = JSON.parse(decodeRaw);
@@ -189,7 +189,7 @@ async function runChecks() {
     return;
   }
 
-  // All checks passed — show decoded fields
+  // All checks passed — show decoded fields, then auto-run live verify
   await sleep(200);
   showDecodedCard();
 }
@@ -215,16 +215,24 @@ function showDecodedCard() {
   document.getElementById('hash-preview').textContent = hash || 'Not available';
 
   document.getElementById('decoded-card').style.display = '';
-  document.getElementById('action-card').style.display = '';
+
+  // Show the action-card in a "running" state — no button click needed.
+  // Live verification is triggered automatically after a brief pause so the
+  // employer can see all registry checks completed before we proceed.
+  const actionCard = document.getElementById('action-card');
+  actionCard.style.display = '';
+  const btn = document.getElementById('live-verify-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<div class="spinner"></div> Running live verification…';
+
+  // Auto-trigger: 700 ms pause gives employer time to read the green checks
+  setTimeout(() => startLiveVerify(), 700);
 }
 
 function showRevokedCard(data) {
-  document.getElementById('revoked-card').style.display = '';
-  if (data.revocation_reason) {
-    const el = document.getElementById('revoked-reason');
-    el.textContent = 'Revocation reason: ' + data.revocation_reason;
-    el.style.display = '';
-  }
+  // decodeData is already in sessionStorage (set by verify.html before redirecting here).
+  // revoked.html handles the no-live-data entry point natively — route straight there.
+  window.location.href = 'revoked.html';
 }
 
 async function startLiveVerify() {
@@ -233,13 +241,16 @@ async function startLiveVerify() {
   btn.innerHTML = '<div class="spinner"></div> Contacting college ERP…';
 
   try {
-    const data = await API.post('/verify/live', { authenx_code: code });
+    const data = await API.post('/verify/live', {
+      authenx_code: code,
+      force_live_data: true,
+    });
     sessionStorage.setItem('verify_live', JSON.stringify(data));
 
     if (data.result === 'verified' || data.result === 'fallback_verified') {
-      window.location.href = '/employer/verified.html';
+      window.location.href = 'verified.html';
     } else if (data.result === 'revoked') {
-      window.location.href = '/employer/revoked.html';
+      window.location.href = 'revoked.html';
     } else {
       throw new Error(data.error || 'Unexpected result: ' + data.result);
     }
