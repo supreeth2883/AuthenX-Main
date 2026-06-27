@@ -236,7 +236,9 @@ async function liveVerify(req, res, body) {
              last_verified_at   = NOW(),
              last_result        = $1
          WHERE id = $2`, [result, token.id]);
-  } catch {} // Non-critical
+  } catch (err) {
+    console.warn('[verify] Failed to update token verification stats:', err.message);
+  }
 
   const responseBody = {
     result,
@@ -308,7 +310,7 @@ async function callConnector(connectorUrl, payload, collegeId, sharedSecret, col
           if (response.statusCode === 404) return reject(new Error('Student not found at connector'));
           if (response.statusCode >= 400) return reject(new Error(`Connector error ${response.statusCode}`));
           try { resolve(JSON.parse(data)); }
-          catch { reject(new Error('Invalid JSON from connector')); }
+          catch (parseErr) { reject(new Error(`Invalid JSON from connector: ${parseErr.message}`)); }
         });
       });
 
@@ -352,8 +354,8 @@ async function signWithHsm(collegeId, payload) {
             return reject(new Error(parsed.error || `HSM sign failed (${response.statusCode})`));
           }
           resolve(Buffer.from(parsed.signature, 'hex').toString('base64'));
-        } catch {
-          reject(new Error('Invalid HSM response'));
+        } catch (parseErr) {
+          reject(new Error(`Invalid HSM response: ${parseErr.message}`));
         }
       });
     });
@@ -381,11 +383,17 @@ async function fetchLedgerPublicKey(collegeId) {
         try {
           if (res.statusCode !== 200) return resolve(null);
           resolve(JSON.parse(data).public_key_hex);
-        } catch { resolve(null); }
+        } catch (err) {
+          console.warn('[verify] Failed to parse ledger public key response:', err.message);
+          resolve(null);
+        }
       });
     });
     req.setTimeout(2000, () => { req.destroy(); resolve(null); });
-    req.on('error', () => resolve(null));
+    req.on('error', (err) => {
+      console.warn('[verify] Ledger public key request failed:', err.message);
+      resolve(null);
+    });
     req.end();
   });
 }
@@ -450,7 +458,8 @@ async function mockConnectorVerify({ student_ref_token, nonce }, ctx = {}) {
   let live_signature = null;
   try {
     live_signature = await signWithHsm(issuer_id, nonce + ':' + liveHash);
-  } catch {
+  } catch (err) {
+    console.warn('[verify] HSM signing unavailable, using mock fallback:', err.message);
     const mockPrivKey = process.env.MOCK_CONNECTOR_PRIV_KEY;
     live_signature = mockPrivKey ? signEd25519(nonce + ':' + liveHash, mockPrivKey) : null;
   }

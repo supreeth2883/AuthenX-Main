@@ -87,7 +87,8 @@ function verifyEd25519(message, signatureBase64, publicKeyHex) {
     const publicKey = crypto.createPublicKey({ key: spkiDer, format: 'der', type: 'spki' });
     const sig = Buffer.from(signatureBase64, 'base64');
     return crypto.verify(null, Buffer.from(message, 'utf8'), publicKey, sig);
-  } catch {
+  } catch (err) {
+    console.warn('[crypto] Ed25519 signature verification error:', err.message);
     return false;
   }
 }
@@ -104,10 +105,14 @@ const AES_KEY = (() => {
       const data = JSON.parse(_fs.readFileSync(keyFile, 'utf8'));
       if (data.aes_key_hex) return Buffer.from(data.aes_key_hex, 'hex');
     }
-  } catch (_) { /* will generate new key */ }
+  } catch (err) {
+    console.warn('[crypto] Could not load AES key from file, generating new:', err.message);
+  }
   const hex = crypto.randomBytes(32).toString('hex');
   try { _fs.writeFileSync(keyFile, JSON.stringify({ aes_key_hex: hex, generated: new Date().toISOString() }, null, 2)); }
-  catch (_) { /* could not persist — key lives in memory only */ }
+  catch (err) {
+    console.warn('[crypto] Could not persist AES key to file (key lives in memory only):', err.message);
+  }
   return Buffer.from(hex, 'hex');
 })();
 
@@ -207,7 +212,9 @@ const JWT_SECRET = (() => {
       const data = JSON.parse(_fs.readFileSync(keyFile, 'utf8'));
       if (data.jwt_secret) return data.jwt_secret;
     }
-  } catch (_) { /* will generate */ }
+  } catch (err) {
+    console.warn('[crypto] Could not load JWT secret from file, generating new:', err.message);
+  }
 
   const secret = crypto.randomBytes(64).toString('hex');
   try {
@@ -217,7 +224,9 @@ const JWT_SECRET = (() => {
     existing.jwt_secret = secret;
     existing.generated  = new Date().toISOString();
     _fs.writeFileSync(keyFile, JSON.stringify(existing, null, 2));
-  } catch (_) { /* could not persist */ }
+  } catch (err) {
+    console.warn('[crypto] Could not persist JWT secret to file:', err.message);
+  }
   console.warn('[auth] JWT_SECRET generated and persisted to aes_key.json (dev only)');
   return secret;
 })();

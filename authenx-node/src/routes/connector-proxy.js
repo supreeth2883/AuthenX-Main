@@ -44,7 +44,9 @@ function requestJson(method, urlString, bodyString, extraHeaders = {}, timeoutMs
       res.on('data', c => data += c);
       res.on('end', () => {
         let parsed = null;
-        try { parsed = data ? JSON.parse(data) : {}; } catch {}
+        try { parsed = data ? JSON.parse(data) : {}; } catch (err) {
+          console.warn('[connector-proxy] Failed to parse connector response as JSON:', err.message);
+        }
         resolve({ status: res.statusCode || 0, json: parsed, raw: data });
       });
     });

@@ -53,7 +53,7 @@ function readBody(req) {
       const raw = Buffer.concat(chunks).toString('utf8');
       if (!raw) return resolve({});
       try { resolve(JSON.parse(raw)); }
-      catch { reject(new Error('Invalid JSON body')); }
+      catch (err) { reject(new Error(`Invalid JSON body: ${err.message}`)); }
     });
     req.on('error', reject);
   });
@@ -162,7 +162,7 @@ setInterval(() => {
 async function safeRoute(handler, req, res, ...extra) {
   try { return await handler(req, res, ...extra); }
   catch (err) {
-    log.error('Route error:', err.message);
+    log('error', 'Unhandled route error', { error: err.message, stack: err.stack, url: req.url, method: req.method });
     if (!res.headersSent) {
       res.writeHead(500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ error: 'Internal server error' }));
@@ -365,7 +365,8 @@ async function bulkVerify(req, res, body) {
         college: token?.college_name || null,
         credential_type: token?.credential_type || null,
       });
-    } catch {
+    } catch (err) {
+      log('warn', `Bulk verify: invalid code at index ${results.length}`, { error: err.message });
       results.push({ code: code.slice(0, 20) + '...', status: 'invalid_code', college: null });
     }
   }
@@ -472,7 +473,8 @@ async function connectorHealthCheck(req, res) {
         request.end();
       });
       results.push({ college: college.name, status: 'online', latency_ms: Date.now() - start });
-    } catch {
+    } catch (err) {
+      log('warn', `Connector health check failed for ${college.name}`, { error: err.message });
       results.push({ college: college.name, status: 'offline', latency_ms: Date.now() - start });
     }
   }
@@ -562,7 +564,9 @@ async function flushFraudAlerts() {
       );
       metrics.recordFraudAlert();
       log('warn', `🚨 FRAUD ALERT: ${a.alert_type} [${a.severity}]`, { alert_id: a.id, actor: a.actor_email || a.ip_address });
-    } catch { /* non-fatal */ }
+    } catch (err) {
+      log('error', 'Failed to persist fraud alert to DB', { alert_id: a.id, error: err.message });
+    }
   }
 }
 // Flush every 5 seconds
@@ -681,7 +685,9 @@ async function seedDatabase() {
       try {
         const keyData = JSON.parse(_fs.readFileSync(hsmKeyPath, 'utf8'));
         privKey = keyData.private_key_hex;
-      } catch { /* use fallback */ }
+      } catch (err) {
+        console.warn(`[seed] Failed to read HSM key for college ${college.id}, using fallback:`, err.message);
+      }
     }
 
     const fields = {
@@ -1404,7 +1410,9 @@ async function main() {
             }
             synced++;
           }
-        } catch { /* skip invalid key file */ }
+        } catch (err) {
+        console.warn(`[startup] Failed to sync HSM key file ${f}:`, err.message);
+      }
       }
       if (synced > 0) console.log(`  ✓ Synced ${synced} college keys from HSM key-store`);
     }
@@ -1418,7 +1426,9 @@ async function main() {
         console.log('  ✓ Fallback key loaded from connector_key.json');
       }
     }
-  } catch (_syncErr) { /* key sync not available — that's OK */ }
+  } catch (syncErr) {
+    console.warn('[startup] HSM key sync unavailable (non-fatal):', syncErr.message);
+  }
 
   // Inject demo route into router (after routes are loaded)
   const originalRouter = router;
@@ -1428,7 +1438,9 @@ async function main() {
     const urlObj = new URL(req.url, `http://localhost:${PORT}`);
     if (urlObj.pathname === '/v1/tokens/issue-demo' && req.method === 'POST') {
       let body = {};
-      try { body = await readBody(req); } catch { }
+      try { body = await readBody(req); } catch (err) {
+        log('warn', 'Failed to read demo route body', { error: err.message });
+      }
       return issueDemoRoute(req, res, body);
     }
     return originalRouter(req, res);
@@ -1453,7 +1465,9 @@ async function main() {
       try {
         const alertCount = fraud.flushAlerts().length;
         if (alertCount > 0) console.log(`✓ Flushed ${alertCount} fraud alerts`);
-      } catch { }
+      } catch (err) {
+        console.error('Failed to flush fraud alerts during shutdown:', err.message);
+      }
 
       console.log('✅ Shutdown complete');
       process.exit(0);

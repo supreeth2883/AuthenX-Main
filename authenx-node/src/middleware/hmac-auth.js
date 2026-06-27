@@ -86,8 +86,8 @@ function verifyRequest(req, body, sharedSecret) {
       Buffer.from(expected, 'hex')
     );
     return valid ? { valid: true } : { valid: false, error: 'HMAC signature mismatch' };
-  } catch {
-    return { valid: false, error: 'HMAC signature verification failed' };
+  } catch (err) {
+    return { valid: false, error: `HMAC signature verification failed: ${err.message}` };
   }
 }
 
